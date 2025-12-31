@@ -1,0 +1,8 @@
+{
+  "name": "Copy of Heartly pro app",
+  "description": "A social voice platform allowing users to create rooms, chat, and connect instantly.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}

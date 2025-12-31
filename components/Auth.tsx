@@ -1,0 +1,270 @@
+
+import React, { useState, useEffect } from 'react';
+import { 
+  signInWithPhoneNumber, 
+  RecaptchaVerifier, 
+  ConfirmationResult,
+  updateProfile
+} from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
+import { 
+  Phone, 
+  MessageSquare, 
+  User as UserIcon, 
+  AlertCircle, 
+  ArrowRight, 
+  Sparkles,
+  ChevronLeft,
+  Loader2,
+  CheckCircle2
+} from 'lucide-react';
+
+type AuthStep = 'phone' | 'otp' | 'profile';
+
+export const Auth: React.FC = () => {
+  const [step, setStep] = useState<AuthStep>('phone');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [otp, setOtp] = useState('');
+  const [name, setName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+
+  // Initialize Recaptcha
+  const setupRecaptcha = (containerId: string) => {
+    if ((window as any).recaptchaVerifier) {
+        (window as any).recaptchaVerifier.clear();
+    }
+    (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
+      'size': 'invisible',
+      'callback': () => {}
+    });
+  };
+
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (phoneNumber.length < 10) {
+      setError('Please enter a valid phone number');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      setupRecaptcha('recaptcha-container');
+      const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+91${phoneNumber}`;
+      const verifier = (window as any).recaptchaVerifier;
+      const result = await signInWithPhoneNumber(auth, formattedPhone, verifier);
+      setConfirmationResult(result);
+      setStep('otp');
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message.includes('too-many-requests') 
+        ? 'Too many attempts. Try again later.' 
+        : 'Failed to send OTP. Check number format.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (otp.length !== 6) {
+      setError('Enter 6-digit OTP');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const userCredential = await confirmationResult!.confirm(otp);
+      const user = userCredential.user;
+      
+      // Check if user exists in Firestore
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      
+      if (!userDoc.exists()) {
+        setStep('profile');
+      }
+      // If user exists, App.tsx listener handles the rest
+    } catch (err: any) {
+      setError('Invalid OTP code. Try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompleteProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    setLoading(true);
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      await updateProfile(user, { displayName: name });
+      
+      const uniqueId = Math.random().toString(36).substring(2, 6).toUpperCase();
+      await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          displayName: name,
+          phoneNumber: user.phoneNumber,
+          photoURL: null,
+          uniqueId: uniqueId,
+          createdAt: Date.now(),
+          walletBalance: 100, // Starter Coins
+          followers: [],
+          following: [],
+          bio: 'Hey there! I am using Heartly.'
+      });
+      // App state will update via onAuthStateChanged
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="h-[100dvh] flex flex-col items-center justify-center bg-[#050505] relative overflow-hidden px-6">
+      {/* Premium Ambient Background */}
+      <div className="absolute top-[-10%] left-[-20%] w-[600px] h-[600px] bg-violet-600/10 rounded-full blur-[120px] animate-pulse" />
+      <div className="absolute bottom-[-10%] right-[-20%] w-[600px] h-[600px] bg-fuchsia-600/10 rounded-full blur-[120px] animate-pulse" />
+      <div id="recaptcha-container"></div>
+
+      <div className="w-full max-w-sm relative z-10">
+        
+        {/* Step-based Header */}
+        <div className="mb-10 flex flex-col items-center animate-fade-in">
+             <div className="relative mb-6">
+                  <div className="absolute -inset-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-full blur-2xl opacity-20 animate-pulse"></div>
+                  <div className="relative w-24 h-24 bg-white/5 rounded-3xl border border-white/10 flex items-center justify-center shadow-2xl backdrop-blur-md rotate-12 group transition-transform hover:rotate-0 duration-500">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" className="drop-shadow-[0_0_15px_rgba(167,139,250,0.8)]">
+                          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="url(#authGrad)"/>
+                          <defs>
+                              <linearGradient id="authGrad" x1="2" y1="3" x2="22" y2="21" gradientUnits="userSpaceOnUse">
+                                  <stop stopColor="#A78BFA"/>
+                                  <stop offset="1" stopColor="#F472B6"/>
+                              </linearGradient>
+                          </defs>
+                      </svg>
+                  </div>
+             </div>
+             
+             <h1 className="text-4xl font-black text-white tracking-tighter text-center">
+                 Heartly <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400">Voice</span>
+             </h1>
+             <p className="text-gray-500 text-sm mt-2 font-medium">Premium Social Audio Experience</p>
+        </div>
+
+        {/* Content Card */}
+        <div className="glass-card rounded-[2.5rem] p-8 shadow-2xl relative animate-fade-in">
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-2xl text-xs flex items-center gap-3 mb-6 animate-fade-in">
+              <AlertCircle size={18} className="shrink-0" />
+              <span className="font-bold">{error}</span>
+            </div>
+          )}
+
+          {step === 'phone' && (
+            <form onSubmit={handleSendOtp} className="space-y-6">
+                <div>
+                    <h2 className="text-xl font-bold text-white mb-1">Welcome Back</h2>
+                    <p className="text-xs text-gray-500 mb-6">Enter your phone to get started</p>
+                    <div className="relative group">
+                        <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 border-r border-white/10 pr-3">
+                            <span className="text-sm font-bold text-gray-400">+91</span>
+                        </div>
+                        <input
+                            type="tel"
+                            className="w-full pl-16 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl focus:border-violet-500/50 outline-none transition-all text-base font-bold text-white tracking-widest placeholder-gray-700"
+                            placeholder="Phone Number"
+                            value={phoneNumber}
+                            onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                            autoFocus
+                        />
+                    </div>
+                </div>
+                <button
+                    type="submit"
+                    disabled={loading || phoneNumber.length < 10}
+                    className="w-full bg-white text-black font-black py-4 rounded-2xl shadow-xl transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 group"
+                >
+                    {loading ? <Loader2 className="animate-spin" size={20} /> : <>Next Step <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" /></>}
+                </button>
+            </form>
+          )}
+
+          {step === 'otp' && (
+            <form onSubmit={handleVerifyOtp} className="space-y-6">
+                <div>
+                    <button 
+                        type="button" 
+                        onClick={() => setStep('phone')}
+                        className="flex items-center gap-1 text-[10px] font-black uppercase text-gray-500 mb-4 hover:text-white transition-colors"
+                    >
+                        <ChevronLeft size={14} /> Edit Number
+                    </button>
+                    <h2 className="text-xl font-bold text-white mb-1">Verification</h2>
+                    <p className="text-xs text-gray-500 mb-6">Sent to +91 {phoneNumber}</p>
+                    <input
+                        type="text"
+                        maxLength={6}
+                        className="w-full py-4 bg-black/40 border border-white/10 rounded-2xl text-center text-3xl font-black text-white tracking-[0.5em] focus:border-violet-500/50 outline-none transition-all"
+                        placeholder="••••••"
+                        value={otp}
+                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                        autoFocus
+                    />
+                </div>
+                <button
+                    type="submit"
+                    disabled={loading || otp.length < 6}
+                    className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-black py-4 rounded-2xl shadow-lg shadow-violet-600/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+                >
+                    {loading ? <Loader2 className="animate-spin" size={20} /> : <>Verify OTP <CheckCircle2 size={18} /></>}
+                </button>
+            </form>
+          )}
+
+          {step === 'profile' && (
+            <form onSubmit={handleCompleteProfile} className="space-y-6">
+                <div className="text-center mb-2">
+                    <div className="w-20 h-20 bg-violet-600/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-violet-500/20">
+                        <Sparkles size={32} className="text-violet-400" />
+                    </div>
+                    <h2 className="text-xl font-bold text-white">Almost There!</h2>
+                    <p className="text-xs text-gray-500">How should we call you?</p>
+                </div>
+                <div className="relative">
+                    <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                    <input
+                        type="text"
+                        className="w-full pl-12 pr-4 py-4 bg-black/40 border border-white/10 rounded-2xl focus:border-violet-500/50 outline-none transition-all text-sm font-bold text-white"
+                        placeholder="Your Display Name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        autoFocus
+                    />
+                </div>
+                <button
+                    type="submit"
+                    disabled={loading || !name.trim()}
+                    className="w-full bg-white text-black font-black py-4 rounded-2xl shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2"
+                >
+                    {loading ? <Loader2 className="animate-spin" size={20} /> : "Finish Setup"}
+                </button>
+            </form>
+          )}
+        </div>
+
+        <p className="mt-8 text-center text-[10px] font-bold text-gray-600 uppercase tracking-widest leading-loose">
+            Secure • Encrypted • Premium<br/>
+            By signing in you agree to our Terms
+        </p>
+      </div>
+    </div>
+  );
+};
