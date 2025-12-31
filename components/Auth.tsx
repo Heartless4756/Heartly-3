@@ -68,6 +68,10 @@ export const Auth: React.FC = () => {
     setError(null);
     try {
       const provider = new GoogleAuthProvider();
+      // Force account selection prompt to show all logged-in Google accounts
+      provider.setCustomParameters({
+        prompt: 'select_account'
+      });
       // Using redirect prevents popup blocker issues and blank screens on mobile
       await signInWithRedirect(auth, provider);
     } catch (err: any) {
