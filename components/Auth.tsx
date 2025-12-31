@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   GoogleAuthProvider,
-  signInWithPopup,
+  signInWithRedirect,
   getRedirectResult,
   User
 } from 'firebase/auth';
@@ -73,20 +73,11 @@ export const Auth: React.FC = () => {
         prompt: 'select_account'
       });
       
-      // Using popup to prevent white screen navigation issues
-      const result = await signInWithPopup(auth, provider);
-      if (result) {
-          await handleAuthSuccess(result.user);
-      }
+      // Using redirect as requested
+      await signInWithRedirect(auth, provider);
     } catch (err: any) {
       console.error("Google Login Error:", err);
-      if (err.code === 'auth/popup-closed-by-user') {
-        setError("Login cancelled.");
-      } else if (err.code === 'auth/cancelled-popup-request') {
-        setError("Another login popup is already open.");
-      } else {
-        setError(err.message);
-      }
+      setError(err.message);
       setLoading(false);
     }
   };
