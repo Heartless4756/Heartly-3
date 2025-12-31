@@ -1,8 +1,10 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithRedirect,
+  getRedirectResult,
+  User
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -13,42 +15,64 @@ import {
 
 export const Auth: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Start true to check for redirect result
+
+  // Handle successful auth (create user in DB if needed)
+  const handleAuthSuccess = async (user: User) => {
+      try {
+          const userDocRef = doc(db, 'users', user.uid);
+          const userDoc = await getDoc(userDocRef);
+
+          if (!userDoc.exists()) {
+              const uniqueId = Math.random().toString(36).substring(2, 6).toUpperCase();
+              await setDoc(userDocRef, {
+                  uid: user.uid,
+                  displayName: user.displayName || 'User',
+                  email: user.email,
+                  phoneNumber: user.phoneNumber || null,
+                  photoURL: user.photoURL,
+                  uniqueId: uniqueId,
+                  createdAt: Date.now(),
+                  walletBalance: 100, // Starter Coins
+                  followers: [],
+                  following: [],
+                  bio: 'Hey there! I am using Heartly.'
+              });
+          }
+      } catch (e: any) {
+          console.error("DB Error:", e);
+          setError("Failed to create profile: " + e.message);
+      }
+  };
+
+  useEffect(() => {
+    const checkRedirect = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+            await handleAuthSuccess(result.user);
+        }
+      } catch (err: any) {
+        console.error("Redirect Login Error:", err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    checkRedirect();
+  }, []);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
     try {
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-
-      // Check if user exists in Firestore
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userDocRef);
-
-      // If new user, create their document immediately
-      if (!userDoc.exists()) {
-          const uniqueId = Math.random().toString(36).substring(2, 6).toUpperCase();
-          await setDoc(userDocRef, {
-              uid: user.uid,
-              displayName: user.displayName || 'User',
-              email: user.email,
-              phoneNumber: user.phoneNumber || null,
-              photoURL: user.photoURL,
-              uniqueId: uniqueId,
-              createdAt: Date.now(),
-              walletBalance: 100, // Starter Coins
-              followers: [],
-              following: [],
-              bio: 'Hey there! I am using Heartly.'
-          });
-      }
-      // App.tsx listener handles the state change and redirection
+      // Using redirect prevents popup blocker issues and blank screens on mobile
+      await signInWithRedirect(auth, provider);
     } catch (err: any) {
-      console.error("Google Login Error:", err);
+      console.error("Google Login Start Error:", err);
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -87,7 +111,7 @@ export const Auth: React.FC = () => {
         {/* Content Card */}
         <div className="glass-card rounded-[2.5rem] p-8 shadow-2xl relative animate-fade-in bg-[#121216]/50 border border-white/5 backdrop-blur-xl">
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-2xl text-xs flex items-center gap-3 mb-6 animate-fade-in">
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-2xl text-xs flex items-center gap-3 mb-6 animate-fade-in break-words">
               <AlertCircle size={18} className="shrink-0" />
               <span className="font-bold">{error}</span>
             </div>
@@ -100,7 +124,10 @@ export const Auth: React.FC = () => {
           >
               <div className="absolute inset-0 bg-gradient-to-r from-white/5 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
               {loading ? (
-                <Loader2 className="animate-spin" size={20} />
+                <div className="flex items-center gap-2">
+                    <Loader2 className="animate-spin" size={20} />
+                    <span>Please wait...</span>
+                </div>
               ) : (
                 <>
                   <svg className="w-5 h-5" viewBox="0 0 24 24">
