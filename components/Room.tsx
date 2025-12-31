@@ -697,6 +697,32 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         if (myP?.seatIndex === undefined || myP.seatIndex < 0) return (<button onClick={() => handleTakeSeat(index)} className="bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-lg flex items-center justify-center gap-2 active:scale-95">Take Seat</button>);
         return <div className="bg-[#2A2A35] text-gray-400 px-3 py-2 rounded-xl text-xs font-bold border border-white/10">Already Seated</div>;
     };
+
+    const renderSeatItem = (seat: typeof gridSeats[0]) => (
+        <div key={seat.index} className="flex flex-col items-center gap-1 cursor-pointer relative" onClick={(e) => handleSeatClick(seat.index, e)}>
+            <div className="relative">
+                <div className="w-14 h-14 rounded-full bg-white/5 border border-white/10 flex items-center justify-center relative overflow-hidden transition-all active:scale-95">
+                    {roomData?.lockedSeats?.includes(seat.index) ? (
+                        <Lock size={16} className="text-white/20" />
+                    ) : seat.occupant ? (
+                        <>
+                            <img src={seat.occupant.photoURL || ''} className="w-full h-full object-cover" />
+                            {(seat.occupant.isMuted || seat.occupant.isHostMuted) && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><MicOff size={14} className="text-white"/></div>}
+                            {speakingUsers[seat.occupant.uid] && !seat.occupant.isMuted && <div className="absolute inset-0 border-2 border-green-500 rounded-full animate-pulse"></div>}
+                        </>
+                    ) : (
+                        <Plus size={16} className="text-white/20" />
+                    )}
+                </div>
+                {seat.occupant && seat.occupant.reaction && seat.occupant.reaction.expiresAt > Date.now() && (
+                    <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+                        <img src={seat.occupant.reaction.url} className="w-24 h-24 drop-shadow-[0_8px_16px_rgba(0,0,0,0.8)] filter brightness-110 object-contain" />
+                    </div>
+                )}
+            </div>
+            <span className="text-[10px] text-gray-200 font-bold drop-shadow-md truncate w-14 text-center">{seat.occupant ? seat.occupant.displayName : `${seat.index + 1}`}</span>
+        </div>
+    );
     
     return (
         <div className={`h-full w-full bg-[#050505] flex flex-col relative transition-all duration-300 ${isMinimized ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
@@ -730,8 +756,8 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                  {giftAnimation && (<div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none overflow-hidden"><div className="absolute inset-0 bg-radial-gradient from-violet-600/30 to-transparent animate-pulse duration-700"></div><div className="absolute inset-0 flex items-center justify-center">{[...Array(12)].map((_, i) => (<div key={i} className="absolute w-2 h-2 bg-yellow-400 rounded-full animate-[ping_1.5s_infinite]" style={{ transform: `rotate(${i * 30}deg) translate(120px) scale(${Math.random()})`, animationDelay: `${Math.random() * 0.5}s` }}></div>))}</div><div className="relative flex flex-col items-center animate-[fadeIn_0.5s_ease-out_forwards]"><div className="text-[120px] filter drop-shadow-[0_20px_30px_rgba(0,0,0,0.6)] animate-[bounce_2s_infinite]" style={{ transform: 'rotate3d(1, 1, 0, 15deg)', textShadow: '0 10px 0px rgba(0,0,0,0.3)' }}>{giftAnimation.icon}</div><div className="mt-8 bg-black/60 backdrop-blur-xl border border-white/20 px-6 py-3 rounded-full shadow-2xl animate-fade-in text-center transform scale-110"><p className="text-white font-bold text-lg leading-tight bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-orange-300 to-yellow-300 animate-pulse">{giftAnimation.senderName}</p><p className="text-white/80 text-xs font-medium uppercase tracking-widest mt-1">sent {giftAnimation.name}</p></div></div></div>)}
                  
                  {/* Seats Container - Moved to Top */}
-                 <div className="flex-shrink-0 flex flex-col items-center mt-4 px-4 max-w-md mx-auto w-full z-10">
-                    <div className="flex justify-center mb-2 relative">
+                 <div className="flex-shrink-0 flex flex-col items-center mt-1 px-4 max-w-md mx-auto w-full z-10">
+                    <div className="flex justify-center mb-8 relative">
                         <div className="relative group cursor-pointer" onClick={(e) => handleSeatClick(999, e)}>
                             {/* Host Seat - Reduced Size */}
                             <div className="w-20 h-20 rounded-full border-4 border-yellow-500/30 bg-black/40 flex items-center justify-center relative overflow-hidden shadow-[0_0_30px_rgba(234,179,8,0.2)] transition-all active:scale-95">
@@ -755,32 +781,14 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                         </div>
                     </div>
                     
-                    <div className="grid grid-cols-4 gap-x-4 gap-y-6">
-                        {gridSeats.map((seat) => (
-                            <div key={seat.index} className="flex flex-col items-center gap-1 cursor-pointer relative" onClick={(e) => handleSeatClick(seat.index, e)}>
-                                <div className="relative">
-                                    <div className="w-14 h-14 rounded-full bg-white/5 border border-white/10 flex items-center justify-center relative overflow-hidden transition-all active:scale-95">
-                                        {roomData?.lockedSeats?.includes(seat.index) ? (
-                                            <Lock size={16} className="text-white/20" />
-                                        ) : seat.occupant ? (
-                                            <>
-                                                <img src={seat.occupant.photoURL || ''} className="w-full h-full object-cover" />
-                                                {(seat.occupant.isMuted || seat.occupant.isHostMuted) && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><MicOff size={14} className="text-white"/></div>}
-                                                {speakingUsers[seat.occupant.uid] && !seat.occupant.isMuted && <div className="absolute inset-0 border-2 border-green-500 rounded-full animate-pulse"></div>}
-                                            </>
-                                        ) : (
-                                            <Plus size={16} className="text-white/20" />
-                                        )}
-                                    </div>
-                                    {seat.occupant && seat.occupant.reaction && seat.occupant.reaction.expiresAt > Date.now() && (
-                                        <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
-                                            <img src={seat.occupant.reaction.url} className="w-24 h-24 drop-shadow-[0_8px_16px_rgba(0,0,0,0.8)] filter brightness-110 object-contain" />
-                                        </div>
-                                    )}
-                                </div>
-                                <span className="text-[10px] text-gray-200 font-bold drop-shadow-md truncate w-14 text-center">{seat.occupant ? seat.occupant.displayName : `${seat.index + 1}`}</span>
-                            </div>
-                        ))}
+                    {/* Split Grid */}
+                    <div className="flex justify-between w-full gap-10 px-2">
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-6">
+                            {[0, 1, 4, 5].map(i => renderSeatItem(gridSeats[i]))}
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-6">
+                            {[2, 3, 6, 7].map(i => renderSeatItem(gridSeats[i]))}
+                        </div>
                     </div>
                  </div>
                  
