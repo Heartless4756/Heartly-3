@@ -8,8 +8,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { 
   AlertCircle, 
-  Loader2,
-  Sparkles
+  Loader2
 } from 'lucide-react';
 
 export const Auth: React.FC = () => {
@@ -56,9 +55,9 @@ export const Auth: React.FC = () => {
 
   return (
     <div className="h-[100dvh] flex flex-col items-center justify-center bg-[#050505] relative overflow-hidden px-6">
-      {/* Premium Ambient Background */}
-      <div className="absolute top-[-10%] left-[-20%] w-[600px] h-[600px] bg-violet-600/10 rounded-full blur-[120px] animate-pulse" />
-      <div className="absolute bottom-[-10%] right-[-20%] w-[600px] h-[600px] bg-fuchsia-600/10 rounded-full blur-[120px] animate-pulse" />
+      {/* Premium Ambient Background - White Texture */}
+      <div className="absolute top-[-10%] left-[-20%] w-[600px] h-[600px] bg-white/5 rounded-full blur-[120px] animate-pulse" />
+      <div className="absolute bottom-[-10%] right-[-20%] w-[600px] h-[600px] bg-white/5 rounded-full blur-[120px] animate-pulse" />
       
       <div className="w-full max-w-sm relative z-10">
         
@@ -94,20 +93,12 @@ export const Auth: React.FC = () => {
             </div>
           )}
 
-          <div className="text-center mb-8">
-              <div className="w-16 h-16 bg-violet-600/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-violet-500/20">
-                  <Sparkles size={24} className="text-violet-400" />
-              </div>
-              <h2 className="text-xl font-bold text-white mb-2">Welcome Back</h2>
-              <p className="text-xs text-gray-500">Sign in to join the conversation</p>
-          </div>
-
           <button 
             onClick={handleGoogleLogin}
             disabled={loading}
             className="w-full bg-[#1A1A21] border border-white/10 hover:bg-white/5 text-white font-bold py-4 rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-3 group relative overflow-hidden"
           >
-              <div className="absolute inset-0 bg-gradient-to-r from-violet-600/10 to-fuchsia-600/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <div className="absolute inset-0 bg-gradient-to-r from-white/5 to-white/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
               {loading ? (
                 <Loader2 className="animate-spin" size={20} />
               ) : (
