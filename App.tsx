@@ -16,17 +16,49 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [dbUser, setDbUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [currentView, setCurrentView] = useState<ViewState>('rooms');
   
-  // Room State
-  const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
-  const [isRoomMinimized, setIsRoomMinimized] = useState(false);
+  // -- STATE PERSISTENCE & INITIALIZATION --
+  
+  // 1. Initialize View from LocalStorage
+  const [currentView, setCurrentView] = useState<ViewState>(() => {
+      const saved = localStorage.getItem('heartly_currentView');
+      return (saved as ViewState) || 'rooms';
+  });
+  
+  // 2. Initialize Room State from LocalStorage
+  const [activeRoomId, setActiveRoomId] = useState<string | null>(() => {
+      return localStorage.getItem('heartly_activeRoomId');
+  });
+  
+  const [isRoomMinimized, setIsRoomMinimized] = useState<boolean>(() => {
+      return localStorage.getItem('heartly_isRoomMinimized') === 'true';
+  });
 
   const [profileVersion, setProfileVersion] = useState(0);
   const [totalUnread, setTotalUnread] = useState(0);
   
   const previousUnreadRef = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // -- PERSISTENCE EFFECTS --
+  
+  useEffect(() => {
+      localStorage.setItem('heartly_currentView', currentView);
+  }, [currentView]);
+
+  useEffect(() => {
+      if (activeRoomId) {
+          localStorage.setItem('heartly_activeRoomId', activeRoomId);
+      } else {
+          localStorage.removeItem('heartly_activeRoomId');
+      }
+  }, [activeRoomId]);
+
+  useEffect(() => {
+      localStorage.setItem('heartly_isRoomMinimized', String(isRoomMinimized));
+  }, [isRoomMinimized]);
+
+  // -- INITIALIZATION & HISTORY RESTORATION --
 
   useEffect(() => {
     // Request notification permission on mount
@@ -36,11 +68,22 @@ const App: React.FC = () => {
     // Preload notification sound (subtle pop)
     audioRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2346/2346-preview.mp3");
     
-    // Initialize History State for Back Navigation
-    if (!window.history.state) {
-        window.history.replaceState({ view: 'rooms' }, '');
+    // HISTORY RECONSTRUCTION
+    // If we restored a room ID from local storage, we need to ensure the History stack 
+    // mimics the user having navigated there, so the Back button works correctly.
+    if (activeRoomId) {
+        // We are restoring into a room. 
+        // 1. Establish the "Base" state (the view underneath)
+        window.history.replaceState({ view: currentView }, '');
+        // 2. Push the "Room" state on top
+        window.history.pushState({ view: currentView, roomId: activeRoomId }, '');
+    } else {
+        // Normal initialization or restore to a tab
+        if (!window.history.state) {
+            window.history.replaceState({ view: currentView }, '');
+        }
     }
-  }, []);
+  }, []); // Run once on mount
 
   // 1. Auth Listener
   useEffect(() => {
@@ -55,7 +98,7 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. Real-time User Profile Listener (Fixes immediate photo update)
+  // 2. Real-time User Profile Listener
   useEffect(() => {
     if (!user) return;
 
@@ -177,6 +220,10 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     await signOut(auth);
     setDbUser(null);
+    // Clear persistence on logout
+    localStorage.removeItem('heartly_currentView');
+    localStorage.removeItem('heartly_activeRoomId');
+    localStorage.removeItem('heartly_isRoomMinimized');
   };
 
   // Sync profile changes to Active Room and Chats
