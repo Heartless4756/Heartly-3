@@ -35,6 +35,11 @@ const App: React.FC = () => {
     }
     // Preload notification sound (subtle pop)
     audioRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2346/2346-preview.mp3");
+    
+    // Initialize History State for Back Navigation
+    if (!window.history.state) {
+        window.history.replaceState({ view: 'rooms' }, '');
+    }
   }, []);
 
   // 1. Auth Listener
@@ -145,6 +150,30 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [user, currentView, activeRoomId, isRoomMinimized]);
 
+  // --- Back Button Handling Logic ---
+  useEffect(() => {
+      const handlePopState = (event: PopStateEvent) => {
+          // If we are currently in a room (activeRoomId is set), the back button should close the room first
+          if (activeRoomId) {
+              setActiveRoomId(null);
+              setIsRoomMinimized(false);
+              return;
+          }
+
+          // If not in a room, handle view navigation
+          const state = event.state;
+          if (state && state.view) {
+              setCurrentView(state.view);
+          } else {
+              // Fallback to 'rooms' if no state
+              setCurrentView('rooms');
+          }
+      };
+
+      window.addEventListener('popstate', handlePopState);
+      return () => window.removeEventListener('popstate', handlePopState);
+  }, [activeRoomId]); // Re-bind when activeRoomId changes to capture correct state
+
   const handleLogout = async () => {
     await signOut(auth);
     setDbUser(null);
@@ -202,14 +231,32 @@ const App: React.FC = () => {
     }
   };
 
+  // --- Navigation Wrappers to Push History ---
+  
+  const handleSetCurrentView = (view: ViewState) => {
+      if (view === currentView) return;
+      // Push new state to history
+      window.history.pushState({ view }, '');
+      setCurrentView(view);
+  };
+
   const handleJoinRoom = (id: string) => {
+      // Push room state to history
+      window.history.pushState({ view: currentView, roomId: id }, '');
       setActiveRoomId(id);
       setIsRoomMinimized(false);
   };
 
   const handleLeaveRoom = () => {
-      setActiveRoomId(null);
-      setIsRoomMinimized(false);
+      // If the current history state has a roomId, we should go back to pop it
+      // Otherwise (e.g. initial load), just clear the state
+      if (window.history.state && window.history.state.roomId) {
+          window.history.back();
+          // The popstate listener will handle setting activeRoomId to null
+      } else {
+          setActiveRoomId(null);
+          setIsRoomMinimized(false);
+      }
   };
 
   if (loading) {
@@ -280,7 +327,7 @@ const App: React.FC = () => {
       case 'listeners':
         return (
           <CallListeners
-            currentUser={userProfile}
+            currentUser={userProfile} 
             onJoinRoom={handleJoinRoom}
           />
         );
@@ -314,7 +361,7 @@ const App: React.FC = () => {
           <div className="flex-1 overflow-hidden relative"> 
             {renderView()}
           </div>
-          <Navigation currentView={currentView} setView={setCurrentView} unreadCount={totalUnread} />
+          <Navigation currentView={currentView} setView={handleSetCurrentView} unreadCount={totalUnread} />
       </div>
 
       {/* 2. Active Room Layer (Top Layer) */}
