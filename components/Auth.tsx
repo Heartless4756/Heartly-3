@@ -22,6 +22,12 @@ import {
 
 type AuthStep = 'phone' | 'otp' | 'profile';
 
+declare global {
+  interface Window {
+    recaptchaVerifier: any;
+  }
+}
+
 export const Auth: React.FC = () => {
   const [step, setStep] = useState<AuthStep>('phone');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -31,38 +37,70 @@ export const Auth: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
 
-  // Initialize Recaptcha
-  const setupRecaptcha = (containerId: string) => {
-    if ((window as any).recaptchaVerifier) {
-        (window as any).recaptchaVerifier.clear();
+  // Initialize Recaptcha on Mount
+  useEffect(() => {
+    if (!window.recaptchaVerifier) {
+      try {
+        window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+          'size': 'invisible',
+          'callback': () => {
+            // reCAPTCHA solved, allow signInWithPhoneNumber.
+          },
+          'expired-callback': () => {
+            // Response expired. Ask user to solve reCAPTCHA again.
+            setError('Recaptcha expired. Please try again.');
+          }
+        });
+      } catch (err) {
+        console.error("Recaptcha Init Error:", err);
+      }
     }
-    (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
-      'size': 'invisible',
-      'callback': () => {}
-    });
-  };
+    
+    // Cleanup on unmount is tricky with Firebase Recaptcha as it attaches to window,
+    // usually best to leave it or carefully clear if needed. 
+    // For this flow, we keep it to prevent "reCAPTCHA has already been rendered" errors.
+  }, []);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    
     if (phoneNumber.length < 10) {
-      setError('Please enter a valid phone number');
+      setError('Please enter a valid 10-digit phone number');
       return;
     }
 
     setLoading(true);
     try {
-      setupRecaptcha('recaptcha-container');
       const formattedPhone = phoneNumber.startsWith('+') ? phoneNumber : `+91${phoneNumber}`;
-      const verifier = (window as any).recaptchaVerifier;
-      const result = await signInWithPhoneNumber(auth, formattedPhone, verifier);
+      
+      if (!window.recaptchaVerifier) {
+          throw new Error("Recaptcha not initialized. Please refresh.");
+      }
+
+      const appVerifier = window.recaptchaVerifier;
+      
+      const result = await signInWithPhoneNumber(auth, formattedPhone, appVerifier);
       setConfirmationResult(result);
       setStep('otp');
     } catch (err: any) {
-      console.error(err);
-      setError(err.message.includes('too-many-requests') 
-        ? 'Too many attempts. Try again later.' 
-        : 'Failed to send OTP. Check number format.');
+      console.error("Send OTP Error:", err);
+      
+      // Reset recaptcha on error so user can try again
+      if (window.recaptchaVerifier) {
+          try {
+             // We don't clear here to avoid render issues, just handle the error
+             // window.recaptchaVerifier.clear(); 
+          } catch(e) {}
+      }
+
+      if (err.message.includes('too-many-requests')) {
+          setError('Too many attempts. Please try again later.');
+      } else if (err.message.includes('invalid-phone-number')) {
+          setError('Invalid phone number format.');
+      } else {
+          setError('Failed to send OTP. ' + err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -78,7 +116,11 @@ export const Auth: React.FC = () => {
 
     setLoading(true);
     try {
-      const userCredential = await confirmationResult!.confirm(otp);
+      if (!confirmationResult) {
+          throw new Error("Session expired. Please send OTP again.");
+      }
+
+      const userCredential = await confirmationResult.confirm(otp);
       const user = userCredential.user;
       
       // Check if user exists in Firestore
@@ -89,7 +131,12 @@ export const Auth: React.FC = () => {
       }
       // If user exists, App.tsx listener handles the rest
     } catch (err: any) {
-      setError('Invalid OTP code. Try again.');
+      console.error(err);
+      if (err.code === 'auth/invalid-verification-code') {
+          setError('Invalid OTP code. Please check and try again.');
+      } else {
+          setError('Verification failed. ' + err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -110,6 +157,7 @@ export const Auth: React.FC = () => {
       await setDoc(doc(db, 'users', user.uid), {
           uid: user.uid,
           displayName: name,
+          email: user.email, // Often null for phone auth
           phoneNumber: user.phoneNumber,
           photoURL: null,
           uniqueId: uniqueId,
@@ -132,6 +180,8 @@ export const Auth: React.FC = () => {
       {/* Premium Ambient Background */}
       <div className="absolute top-[-10%] left-[-20%] w-[600px] h-[600px] bg-violet-600/10 rounded-full blur-[120px] animate-pulse" />
       <div className="absolute bottom-[-10%] right-[-20%] w-[600px] h-[600px] bg-fuchsia-600/10 rounded-full blur-[120px] animate-pulse" />
+      
+      {/* Invisible Recaptcha Container */}
       <div id="recaptcha-container"></div>
 
       <div className="w-full max-w-sm relative z-10">
@@ -160,7 +210,7 @@ export const Auth: React.FC = () => {
         </div>
 
         {/* Content Card */}
-        <div className="glass-card rounded-[2.5rem] p-8 shadow-2xl relative animate-fade-in">
+        <div className="glass-card rounded-[2.5rem] p-8 shadow-2xl relative animate-fade-in bg-[#121216]/50 border border-white/5 backdrop-blur-xl">
           {error && (
             <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-2xl text-xs flex items-center gap-3 mb-6 animate-fade-in">
               <AlertCircle size={18} className="shrink-0" />
@@ -202,7 +252,10 @@ export const Auth: React.FC = () => {
                 <div>
                     <button 
                         type="button" 
-                        onClick={() => setStep('phone')}
+                        onClick={() => {
+                            setStep('phone');
+                            setError(null);
+                        }}
                         className="flex items-center gap-1 text-[10px] font-black uppercase text-gray-500 mb-4 hover:text-white transition-colors"
                     >
                         <ChevronLeft size={14} /> Edit Number
