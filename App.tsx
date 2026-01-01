@@ -12,20 +12,37 @@ import { Chat } from './components/Chat';
 import { CallListeners } from './components/CallListeners';
 import { ViewState, UserProfile, ChatMetadata, Room } from './types';
 
+// Cache keys
+const CACHE_KEY_AUTH = 'heartly_cached_auth_user';
+const CACHE_KEY_PROFILE = 'heartly_cached_profile';
+
 const App: React.FC = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [dbUser, setDbUser] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  // 1. Initialize State from Local Storage (INSTANT LOAD)
+  // We mock a Firebase User object structure for the initial render
+  const [user, setUser] = useState<User | any>(() => {
+      const cached = localStorage.getItem(CACHE_KEY_AUTH);
+      return cached ? JSON.parse(cached) : null;
+  });
+
+  const [dbUser, setDbUser] = useState<UserProfile | null>(() => {
+      const cached = localStorage.getItem(CACHE_KEY_PROFILE);
+      return cached ? JSON.parse(cached) : null;
+  });
+
+  // Only show loading spinner if we have NO cached data
+  const [loading, setLoading] = useState(() => {
+      return !localStorage.getItem(CACHE_KEY_AUTH);
+  });
   
   // -- STATE PERSISTENCE & INITIALIZATION --
   
-  // 1. Initialize View from LocalStorage
+  // Initialize View from LocalStorage
   const [currentView, setCurrentView] = useState<ViewState>(() => {
       const saved = localStorage.getItem('heartly_currentView');
       return (saved as ViewState) || 'rooms';
   });
   
-  // 2. Initialize Room State from LocalStorage
+  // Initialize Room State from LocalStorage
   const [activeRoomId, setActiveRoomId] = useState<string | null>(() => {
       return localStorage.getItem('heartly_activeRoomId');
   });
@@ -69,38 +86,47 @@ const App: React.FC = () => {
     audioRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2346/2346-preview.mp3");
     
     // HISTORY RECONSTRUCTION
-    // If we restored a room ID from local storage, we need to ensure the History stack 
-    // mimics the user having navigated there, so the Back button works correctly.
     if (activeRoomId) {
-        // We are restoring into a room. 
-        // 1. Establish the "Base" state (the view underneath)
         window.history.replaceState({ view: currentView }, '');
-        // 2. Push the "Room" state on top
         window.history.pushState({ view: currentView, roomId: activeRoomId }, '');
     } else {
-        // Normal initialization or restore to a tab
         if (!window.history.state) {
             window.history.replaceState({ view: currentView }, '');
         }
     }
-  }, []); // Run once on mount
+  }, []); 
 
-  // 1. Auth Listener
+  // 1. Auth Listener (Network)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (!currentUser) {
+      if (currentUser) {
+        // User is logged in
+        setUser(currentUser);
+        // Update Cache with minimal necessary data
+        const serializableUser = {
+            uid: currentUser.uid,
+            email: currentUser.email,
+            displayName: currentUser.displayName,
+            photoURL: currentUser.photoURL,
+            phoneNumber: currentUser.phoneNumber
+        };
+        localStorage.setItem(CACHE_KEY_AUTH, JSON.stringify(serializableUser));
+      } else {
+        // User is logged out
+        setUser(null);
         setDbUser(null);
         setLoading(false);
+        // Clear Cache
+        localStorage.removeItem(CACHE_KEY_AUTH);
+        localStorage.removeItem(CACHE_KEY_PROFILE);
       }
-      // If user exists, the Snapshot listener below will handle dbUser and loading state
     });
     return () => unsubscribe();
   }, []);
 
   // 2. Real-time User Profile Listener
   useEffect(() => {
-    if (!user) return;
+    if (!user?.uid) return;
 
     const userDocRef = doc(db, 'users', user.uid);
     const unsubscribeSnapshot = onSnapshot(userDocRef, async (docSnap) => {
@@ -113,6 +139,8 @@ const App: React.FC = () => {
                 alert("This account has been banned by the administrator.");
                 setDbUser(null);
                 setLoading(false);
+                localStorage.removeItem(CACHE_KEY_AUTH);
+                localStorage.removeItem(CACHE_KEY_PROFILE);
                 return;
             }
 
@@ -122,10 +150,12 @@ const App: React.FC = () => {
                 await setDoc(userDocRef, { ...userData, uniqueId }, { merge: true });
             } else {
                 setDbUser(userData);
-                setLoading(false);
+                // Update Profile Cache
+                localStorage.setItem(CACHE_KEY_PROFILE, JSON.stringify(userData));
+                setLoading(false); // Ensure loading is off once we have data
             }
         } else {
-            // Create profile if missing
+            // Create profile if missing (rare case)
             const uniqueId = Math.random().toString(36).substring(2, 6).toUpperCase();
             const newUserProfile = {
                 uid: user.uid,
@@ -138,21 +168,25 @@ const App: React.FC = () => {
                 following: [],
                 walletBalance: 0
             };
-            await setDoc(userDocRef, newUserProfile);
+            // Don't await this for the UI update to be faster, but do it
+            setDoc(userDocRef, newUserProfile);
             setDbUser(newUserProfile);
+            localStorage.setItem(CACHE_KEY_PROFILE, JSON.stringify(newUserProfile));
             setLoading(false);
         }
     }, (error) => {
         console.error("User snapshot error:", error);
-        setLoading(false);
+        // If network fails but we have cache, we are fine. 
+        // If no cache and network fails, stop loading
+        if (loading) setLoading(false);
     });
 
     return () => unsubscribeSnapshot();
-  }, [user]);
+  }, [user?.uid]);
 
   // Global Listener for Unread Messages (Notifications)
   useEffect(() => {
-    if (!user) return;
+    if (!user?.uid) return;
 
     const q = query(
       collection(db, 'chats'), 
@@ -169,7 +203,6 @@ const App: React.FC = () => {
         count += myUnread;
       });
 
-      // If unread count increased, trigger notification
       if (count > previousUnreadRef.current) {
          hasNewMessage = true;
       }
@@ -177,10 +210,7 @@ const App: React.FC = () => {
       setTotalUnread(count);
 
       if (hasNewMessage && currentView !== 'chats' && (!activeRoomId || isRoomMinimized)) {
-         // Play sound
          audioRef.current?.play().catch(() => {});
-         
-         // Show Browser Notification
          if (document.hidden && Notification.permission === "granted") {
             new Notification("Heartly", {
                 body: "You have a new message!",
@@ -191,54 +221,52 @@ const App: React.FC = () => {
     });
 
     return () => unsubscribe();
-  }, [user, currentView, activeRoomId, isRoomMinimized]);
+  }, [user?.uid, currentView, activeRoomId, isRoomMinimized]);
 
   // --- Back Button Handling Logic ---
   useEffect(() => {
       const handlePopState = (event: PopStateEvent) => {
-          // If we are currently in a room (activeRoomId is set), the back button should close the room first
           if (activeRoomId) {
               setActiveRoomId(null);
               setIsRoomMinimized(false);
               return;
           }
-
-          // If not in a room, handle view navigation
           const state = event.state;
           if (state && state.view) {
               setCurrentView(state.view);
           } else {
-              // Fallback to 'rooms' if no state
               setCurrentView('rooms');
           }
       };
 
       window.addEventListener('popstate', handlePopState);
       return () => window.removeEventListener('popstate', handlePopState);
-  }, [activeRoomId]); // Re-bind when activeRoomId changes to capture correct state
+  }, [activeRoomId]);
 
   const handleLogout = async () => {
     await signOut(auth);
     setDbUser(null);
-    // Clear persistence on logout
     localStorage.removeItem('heartly_currentView');
     localStorage.removeItem('heartly_activeRoomId');
     localStorage.removeItem('heartly_isRoomMinimized');
+    localStorage.removeItem(CACHE_KEY_AUTH);
+    localStorage.removeItem(CACHE_KEY_PROFILE);
   };
 
-  // Sync profile changes to Active Room and Chats
   const handleProfileUpdate = async () => {
     setProfileVersion(prev => prev + 1);
     
-    if (!user) return;
+    if (!user?.uid) return;
 
-    // Fetch latest fresh data immediately
     const userDocRef = doc(db, 'users', user.uid);
     const snap = await getDoc(userDocRef);
     if (!snap.exists()) return;
     const latestData = snap.data() as UserProfile;
+    
+    // Update local cache immediately
+    localStorage.setItem(CACHE_KEY_PROFILE, JSON.stringify(latestData));
 
-    // 1. Update Active Room Participant Data
+    // Update Active Room Participant Data
     if (activeRoomId) {
         const roomRef = doc(db, 'rooms', activeRoomId);
         const roomSnap = await getDoc(roomRef);
@@ -258,7 +286,7 @@ const App: React.FC = () => {
         }
     }
 
-    // 2. Update Chats Participant Details (Consistency)
+    // Update Chats Participant Details
     const chatsQuery = query(collection(db, 'chats'), where('participants', 'array-contains', user.uid));
     const chatSnaps = await getDocs(chatsQuery);
     const batch = writeBatch(db);
@@ -278,28 +306,21 @@ const App: React.FC = () => {
     }
   };
 
-  // --- Navigation Wrappers to Push History ---
-  
   const handleSetCurrentView = (view: ViewState) => {
       if (view === currentView) return;
-      // Push new state to history
       window.history.pushState({ view }, '');
       setCurrentView(view);
   };
 
   const handleJoinRoom = (id: string) => {
-      // Push room state to history
       window.history.pushState({ view: currentView, roomId: id }, '');
       setActiveRoomId(id);
       setIsRoomMinimized(false);
   };
 
   const handleLeaveRoom = () => {
-      // If the current history state has a roomId, we should go back to pop it
-      // Otherwise (e.g. initial load), just clear the state
       if (window.history.state && window.history.state.roomId) {
           window.history.back();
-          // The popstate listener will handle setting activeRoomId to null
       } else {
           setActiveRoomId(null);
           setIsRoomMinimized(false);
@@ -309,13 +330,11 @@ const App: React.FC = () => {
   if (loading) {
     return (
       <div className="h-[100dvh] w-full flex flex-col items-center justify-center bg-[#020205] relative overflow-hidden">
-        {/* Ambient Background */}
         <div className="absolute top-[-20%] left-[-20%] w-[600px] h-[600px] bg-violet-600/10 rounded-full blur-[120px] animate-pulse" />
         <div className="absolute bottom-[-20%] right-[-20%] w-[600px] h-[600px] bg-fuchsia-600/10 rounded-full blur-[120px] animate-pulse" />
 
         <div className="relative z-10 flex flex-col items-center animate-fade-in">
            <div className="relative w-28 h-28 bg-[#0A0A0F] rounded-full border border-white/10 flex items-center justify-center shadow-2xl animate-float">
-               {/* Logo SVG */}
                <svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                    <defs>
                        <linearGradient id="splashLogoGrad" x1="2" y1="3" x2="22" y2="21" gradientUnits="userSpaceOnUse">
@@ -342,8 +361,8 @@ const App: React.FC = () => {
     return <Auth />;
   }
 
-  const getEffectiveProfile = (fbUser: User): UserProfile => {
-    // Merge DB data with basic Auth data
+  const getEffectiveProfile = (fbUser: User | any): UserProfile => {
+    // If we have dbUser (cached or fresh), merge it. Otherwise use auth data.
     return {
         uid: fbUser.uid,
         email: fbUser.email,
@@ -400,10 +419,7 @@ const App: React.FC = () => {
   };
 
   return (
-    // Use 100dvh (Dynamic Viewport Height) for mobile browser compatibility
     <div className="h-[100dvh] w-full flex flex-col max-w-md mx-auto bg-[#050505] shadow-2xl shadow-black overflow-hidden relative border-x border-white/5 pt-safe">
-      
-      {/* 1. Main Application Views (Bottom Layer) */}
       <div className="absolute inset-0 z-0 flex flex-col pt-safe">
           <div className="flex-1 overflow-hidden relative"> 
             {renderView()}
@@ -411,8 +427,6 @@ const App: React.FC = () => {
           <Navigation currentView={currentView} setView={handleSetCurrentView} unreadCount={totalUnread} />
       </div>
 
-      {/* 2. Active Room Layer (Top Layer) */}
-      {/* If minimized: pointer-events-none allows clicking through to the app view, but we enable pointer-events on the bubble inside Room.tsx */}
       {activeRoomId && (
         <div className={`absolute inset-0 z-50 transition-all duration-300 flex flex-col pt-safe ${isRoomMinimized ? 'bg-transparent pointer-events-none' : 'bg-[#181818]'}`}>
           <ActiveRoom 
