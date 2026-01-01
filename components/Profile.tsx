@@ -1078,8 +1078,106 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   return (
     <div className="flex flex-col h-full bg-transparent text-white relative">
       <input type="file" ref={fileInputRef} className="hidden" accept="image/png, image/jpeg, image/jpg, image/webp" onChange={handleImageUpload} />
-      <div className="relative pt-12 pb-8 px-6 overflow-hidden"><div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-violet-900/40 via-[#1e1b4b]/20 to-transparent z-0 pointer-events-none" /><div className="absolute -top-20 -right-20 w-80 h-80 bg-fuchsia-600/10 rounded-full blur-[80px] pointer-events-none" /><div className="relative z-10 flex flex-col items-center"><div className="relative group mb-6"><div className="relative w-28 h-28"><div className="absolute inset-0 rounded-full bg-gradient-to-tr from-violet-500 to-fuchsia-500 animate-[spin_10s_linear_infinite] opacity-50 blur-sm"></div><div className="absolute inset-0.5 bg-[#050505] rounded-full z-0"></div><img src={isEditing ? editedPhoto : (user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`)} alt="Profile" className="absolute inset-1 w-[calc(100%-8px)] h-[calc(100%-8px)] rounded-full object-cover z-10" onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${editedName}`; }} /></div>{uploading && (<div className="absolute inset-0 flex items-center justify-center z-20 bg-black/60 rounded-full backdrop-blur-sm"><Loader2 size={24} className="text-violet-400 animate-spin" /></div>)}{canEditProfile && isEditing && !uploading && (<div className="absolute -bottom-2 -right-2 flex gap-2 z-20"><button onClick={() => fileInputRef.current?.click()} className="p-2 bg-white text-black rounded-full shadow-lg hover:scale-110 transition-transform"><Camera size={14} /></button></div>)}</div><div className="text-center w-full max-w-sm">{isEditing && canEditProfile ? (<div className="space-y-4 animate-fade-in bg-white/5 backdrop-blur-md p-6 rounded-3xl border border-white/10 shadow-xl"><div className="space-y-2"><label className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Display Name</label><input type="text" value={editedName} onChange={(e) => setEditedName(e.target.value)} className="w-full text-center font-bold text-white bg-black/40 border border-white/10 focus:border-violet-500 rounded-xl px-4 py-3 outline-none transition-all" placeholder="Name" /></div><div className="space-y-2"><label className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Bio</label><textarea value={editedBio} onChange={(e) => setEditedBio(e.target.value)} className="w-full text-center text-xs text-gray-300 bg-black/40 border border-white/10 focus:border-violet-500 rounded-xl px-4 py-3 outline-none transition-all resize-none h-20" placeholder="Tell us about yourself..." maxLength={100} /></div><div className="flex gap-3 pt-2"><button onClick={() => { setIsEditing(false); }} className="flex-1 bg-white/5 hover:bg-white/10 text-gray-400 font-bold py-3 rounded-xl text-xs transition-colors">Cancel</button><button onClick={handleSave} disabled={loading || uploading} className="flex-1 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white font-bold py-3 rounded-xl text-xs shadow-lg transition-colors flex items-center justify-center gap-2">{loading ? <Loader2 className="animate-spin" size={14} /> : <Save size={14}/>} Save Changes</button></div></div>) : (<><h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center justify-center gap-2 mb-1">{user.displayName}{user.isAuthorizedListener && <ShieldCheck size={20} className="text-emerald-400" title="Authorized Listener" />}</h2><div className="flex justify-center items-center gap-2 mb-4"><span className="px-2 py-0.5 bg-white/5 rounded text-[10px] text-gray-400 font-mono tracking-wider">@{user.uniqueId}</span><button onClick={copyId} className="text-gray-500 hover:text-white transition-colors">{copied ? <CheckCircle2 size={12} className="text-green-500"/> : <Copy size={12}/>}</button></div><p className="text-gray-400 text-sm mb-6 leading-relaxed max-w-[80%] mx-auto">{user.bio || 'Ready to connect.'}</p><div className="grid grid-cols-2 gap-4 mb-6"><button onClick={() => handleShowList('following')} className="bg-[#121216]/60 backdrop-blur-md border border-white/5 rounded-2xl p-4 hover:bg-white/5 transition-colors group"><span className="block text-2xl font-extrabold text-white group-hover:text-violet-400 transition-colors">{user.following?.length || 0}</span><span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Following</span></button><button onClick={() => handleShowList('followers')} className="bg-[#121216]/60 backdrop-blur-md border border-white/5 rounded-2xl p-4 hover:bg-white/5 transition-colors group"><span className="block text-2xl font-extrabold text-white group-hover:text-fuchsia-400 transition-colors">{user.followers?.length || 0}</span><span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Followers</span></button></div>{canEditProfile && (<button onClick={() => setIsEditing(true)} className="w-full py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-bold text-gray-300 transition-colors flex items-center justify-center gap-2"><Edit2 size={14} /> Edit Profile</button>)}</>)}</div></div></div>
-      <div className="flex-1 px-6 space-y-6 overflow-y-auto pb-32"><div><h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3 ml-2">General</h3><div className="space-y-3"><SettingsItem onClick={() => { setShowRechargeModal(true); setWalletTab('recharge'); }} icon={<Wallet size={20} />} color="text-yellow-400" bg="bg-yellow-400/10" label="Wallet Balance" badge={`${user.walletBalance || 0}`} />{isAdmin && (<SettingsItem onClick={() => setShowAdminPanel(true)} icon={<ShieldAlert size={20} />} color="text-red-500" bg="bg-red-500/10" label="Admin Dashboard" badge="ACCESS" />)}</div></div><div><h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3 ml-2">Support & Safety</h3><div className="space-y-3"><SettingsItem onClick={() => setShowPrivacyModal(true)} icon={<Shield size={20} />} color="text-emerald-400" bg="bg-emerald-400/10" label="Privacy Center" /><SettingsItem onClick={() => setShowHelpModal(true)} icon={<HelpCircle size={20} />} color="text-cyan-400" bg="bg-cyan-400/10" label="Help & Support" /></div></div><button onClick={onLogout} className="w-full mt-2 bg-[#121216] border border-red-500/20 p-4 rounded-2xl flex items-center justify-center gap-2 text-red-400 font-bold text-sm hover:bg-red-500/10 transition-all active:scale-[0.98]"><LogOut size={18} />Sign Out</button><p className="text-center text-[10px] text-gray-700 pt-4">Heartly Voice v2.5 (Background Update)</p></div>
+      
+      {/* Background Ambience */}
+      <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-violet-900/20 to-transparent pointer-events-none z-0" />
+
+      <div className="flex-1 overflow-y-auto pb-24 px-4 pt-6 space-y-5 no-scrollbar relative z-10">
+        
+        {/* Compact Profile Card */}
+        <div className="bg-[#121216]/80 backdrop-blur-xl border border-white/10 rounded-[2rem] p-5 relative overflow-hidden shadow-2xl">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-violet-600/10 rounded-full blur-[60px] pointer-events-none -mr-10 -mt-10"></div>
+            
+            <div className="flex gap-5 relative z-10">
+                {/* Avatar */}
+                <div className="relative flex-shrink-0">
+                    <div className="w-20 h-20 rounded-[1.2rem] p-[2px] bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg">
+                        <img 
+                            src={isEditing ? editedPhoto : (user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`)} 
+                            className="w-full h-full rounded-[1rem] object-cover bg-gray-900"
+                            alt="Profile"
+                        />
+                    </div>
+                    {canEditProfile && isEditing && !uploading && (
+                         <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-2 -right-2 p-1.5 bg-white text-black rounded-full shadow-lg hover:scale-110 transition-transform"><Camera size={12} /></button>
+                     )}
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0 pt-0.5">
+                    {isEditing && canEditProfile ? (
+                        <div className="space-y-2">
+                             <input type="text" value={editedName} onChange={(e) => setEditedName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-sm font-bold text-white outline-none focus:border-violet-500" placeholder="Display Name" />
+                             <input type="text" value={editedBio} onChange={(e) => setEditedBio(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-gray-300 outline-none focus:border-violet-500" placeholder="Bio" maxLength={60} />
+                        </div>
+                    ) : (
+                        <>
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h2 className="text-lg font-bold text-white leading-tight truncate flex items-center gap-1.5">
+                                        {user.displayName}
+                                        {user.isAuthorizedListener && <ShieldCheck size={14} className="text-emerald-400" />}
+                                    </h2>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-[10px] bg-white/5 border border-white/5 px-1.5 py-0.5 rounded text-gray-400 font-mono tracking-wide">@{user.uniqueId}</span>
+                                        <button onClick={copyId} className="text-gray-500 hover:text-white transition-colors">{copied ? <CheckCircle2 size={12} className="text-green-500"/> : <Copy size={12}/>}</button>
+                                    </div>
+                                </div>
+                                {canEditProfile && (
+                                    <button onClick={() => setIsEditing(true)} className="p-2 bg-white/5 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
+                                        <Edit2 size={16} />
+                                    </button>
+                                )}
+                            </div>
+                            <p className="text-xs text-gray-400 mt-2 line-clamp-1 leading-relaxed">{user.bio || 'No bio yet.'}</p>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* Stats Row */}
+            <div className="flex items-center gap-3 mt-5 relative z-10">
+                 <button onClick={() => handleShowList('following')} className="flex-1 bg-[#0A0A0F]/50 rounded-xl p-3 flex flex-col items-center border border-white/5 group active:scale-95 transition-transform hover:bg-white/5">
+                     <span className="text-sm font-extrabold text-white group-hover:text-violet-300 transition-colors">{user.following?.length || 0}</span>
+                     <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Following</span>
+                 </button>
+                 <button onClick={() => handleShowList('followers')} className="flex-1 bg-[#0A0A0F]/50 rounded-xl p-3 flex flex-col items-center border border-white/5 group active:scale-95 transition-transform hover:bg-white/5">
+                     <span className="text-sm font-extrabold text-white group-hover:text-fuchsia-300 transition-colors">{user.followers?.length || 0}</span>
+                     <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Followers</span>
+                 </button>
+                 <button onClick={() => { setShowRechargeModal(true); setWalletTab('recharge'); }} className="flex-1 bg-gradient-to-br from-yellow-500/10 to-amber-500/10 rounded-xl p-3 flex flex-col items-center border border-yellow-500/20 group active:scale-95 transition-transform hover:bg-yellow-500/20">
+                     <span className="text-sm font-extrabold text-yellow-500">{user.walletBalance || 0}</span>
+                     <span className="text-[9px] text-yellow-600/70 uppercase font-bold tracking-wider">Coins</span>
+                 </button>
+            </div>
+
+            {isEditing && (
+                 <div className="flex gap-3 mt-4 pt-4 border-t border-white/5 animate-fade-in">
+                     <button onClick={() => { setIsEditing(false); }} className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-gray-400 font-bold rounded-xl text-xs transition-colors">Cancel</button>
+                     <button onClick={handleSave} disabled={loading || uploading} className="flex-1 py-2.5 bg-white text-black font-bold rounded-xl text-xs shadow-lg transition-colors flex items-center justify-center gap-2">{loading ? <Loader2 className="animate-spin" size={14} /> : 'Save Changes'}</button>
+                 </div>
+            )}
+        </div>
+
+        {/* Menu Items */}
+        <div>
+            <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3 ml-2">Menu</h3>
+            <div className="space-y-3">
+                {isAdmin && (
+                    <SettingsItem onClick={() => setShowAdminPanel(true)} icon={<ShieldAlert size={18} />} color="text-red-500" bg="bg-red-500/10" label="Admin Dashboard" badge="ACCESS" />
+                )}
+                 <SettingsItem onClick={() => setShowPrivacyModal(true)} icon={<Shield size={18} />} color="text-emerald-400" bg="bg-emerald-400/10" label="Privacy Center" />
+                 <SettingsItem onClick={() => setShowHelpModal(true)} icon={<HelpCircle size={18} />} color="text-cyan-400" bg="bg-cyan-400/10" label="Help & Support" />
+            </div>
+        </div>
+        
+        <button onClick={onLogout} className="w-full bg-[#121216]/50 border border-red-500/10 p-4 rounded-2xl flex items-center justify-center gap-2 text-red-400 font-bold text-xs hover:bg-red-500/10 transition-all active:scale-[0.98]">
+            <LogOut size={16} />Sign Out
+        </button>
+        
+        <p className="text-center text-[10px] text-gray-700 pb-4">Heartly Voice v2.5</p>
+      </div>
+
       {showPrivacyModal && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in overflow-hidden relative flex flex-col max-h-[70vh]"><div className="px-6 py-5 flex items-center justify-between border-b border-white/5"><h3 className="text-lg font-bold text-white flex items-center gap-2"><Shield size={20} className="text-emerald-400" /> Privacy</h3><button onClick={() => setShowPrivacyModal(false)} className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X size={18} /></button></div><div className="flex-1 overflow-y-auto p-6 space-y-6"><div><h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2">Blocked Users</h4>{loadingBlocked ? (<div className="flex justify-center py-4"><Loader2 className="animate-spin text-gray-500" /></div>) : blockedProfiles.length === 0 ? (<div className="text-center py-6 bg-white/5 rounded-2xl border border-white/5"><p className="text-gray-500 text-xs">No blocked users.</p></div>) : (<div className="space-y-2">{blockedProfiles.map(p => (<div key={p.uid} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><div className="flex items-center gap-3"><img src={p.photoURL || ''} className="w-8 h-8 rounded-full bg-gray-800" /><span className="text-sm font-bold text-white">{p.displayName}</span></div><button onClick={() => handleUnblock(p.uid)} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-gray-300 transition-colors" title="Unblock"><UserX size={16} /></button></div>))}</div>)}</div><div className="pt-6 border-t border-white/5"><h4 className="text-xs font-bold text-red-500 uppercase tracking-wider mb-4 flex items-center gap-2">Danger Zone</h4><button onClick={handleDeleteAccount} className="w-full py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"><Trash2 size={16} /> Request Account Deletion</button><p className="text-[10px] text-gray-600 mt-2 text-center">Deletion requests are processed manually within 24 hours.</p></div></div></div></div>)}
       {showAdminPanel && isAdmin && (
         <div className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-xl flex flex-col md:flex-row overflow-hidden animate-fade-in">
