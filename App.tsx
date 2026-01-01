@@ -11,6 +11,7 @@ import { Navigation } from './components/Navigation';
 import { Chat } from './components/Chat';
 import { CallListeners } from './components/CallListeners';
 import { ViewState, UserProfile, ChatMetadata, Room } from './types';
+import { X, Disc3, Mic } from 'lucide-react';
 
 // Cache keys
 const CACHE_KEY_AUTH = 'heartly_cached_auth_user';
@@ -18,7 +19,6 @@ const CACHE_KEY_PROFILE = 'heartly_cached_profile';
 
 const App: React.FC = () => {
   // 1. Initialize State from Local Storage (INSTANT LOAD)
-  // We mock a Firebase User object structure for the initial render
   const [user, setUser] = useState<User | any>(() => {
       const cached = localStorage.getItem(CACHE_KEY_AUTH);
       return cached ? JSON.parse(cached) : null;
@@ -29,20 +29,16 @@ const App: React.FC = () => {
       return cached ? JSON.parse(cached) : null;
   });
 
-  // Only show loading spinner if we have NO cached data
   const [loading, setLoading] = useState(() => {
       return !localStorage.getItem(CACHE_KEY_AUTH);
   });
   
   // -- STATE PERSISTENCE & INITIALIZATION --
-  
-  // Initialize View from LocalStorage
   const [currentView, setCurrentView] = useState<ViewState>(() => {
       const saved = localStorage.getItem('heartly_currentView');
       return (saved as ViewState) || 'rooms';
   });
   
-  // Initialize Room State from LocalStorage
   const [activeRoomId, setActiveRoomId] = useState<string | null>(() => {
       return localStorage.getItem('heartly_activeRoomId');
   });
@@ -51,6 +47,11 @@ const App: React.FC = () => {
       return localStorage.getItem('heartly_isRoomMinimized') === 'true';
   });
 
+  // Floating Disc Position State
+  const [discPosition, setDiscPosition] = useState({ x: window.innerWidth - 80, y: window.innerHeight - 150 });
+  const isDraggingRef = useRef(false);
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+
   const [profileVersion, setProfileVersion] = useState(0);
   const [totalUnread, setTotalUnread] = useState(0);
   
@@ -58,7 +59,6 @@ const App: React.FC = () => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // -- PERSISTENCE EFFECTS --
-  
   useEffect(() => {
       localStorage.setItem('heartly_currentView', currentView);
   }, [currentView]);
@@ -75,17 +75,47 @@ const App: React.FC = () => {
       localStorage.setItem('heartly_isRoomMinimized', String(isRoomMinimized));
   }, [isRoomMinimized]);
 
-  // -- INITIALIZATION & HISTORY RESTORATION --
+  // -- DRAG LOGIC FOR DISC --
+  const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
+    isDraggingRef.current = true;
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    
+    dragOffsetRef.current = {
+        x: clientX - discPosition.x,
+        y: clientY - discPosition.y
+    };
+  };
 
+  const handleTouchMove = (e: React.TouchEvent | React.MouseEvent) => {
+    if (!isDraggingRef.current) return;
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+
+    // Boundary checks
+    const newX = Math.min(Math.max(0, clientX - dragOffsetRef.current.x), window.innerWidth - 70);
+    const newY = Math.min(Math.max(0, clientY - dragOffsetRef.current.y), window.innerHeight - 70);
+
+    setDiscPosition({ x: newX, y: newY });
+  };
+
+  const handleTouchEnd = () => {
+    isDraggingRef.current = false;
+  };
+
+  const handleDiscClick = (e: React.MouseEvent) => {
+      if (!isDraggingRef.current) {
+          setIsRoomMinimized(false);
+      }
+  };
+
+  // -- INITIALIZATION & HISTORY RESTORATION --
   useEffect(() => {
-    // Request notification permission on mount
     if ("Notification" in window && Notification.permission !== "granted") {
       Notification.requestPermission();
     }
-    // Preload notification sound (subtle pop)
     audioRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2346/2346-preview.mp3");
     
-    // HISTORY RECONSTRUCTION
     if (activeRoomId) {
         window.history.replaceState({ view: currentView }, '');
         window.history.pushState({ view: currentView, roomId: activeRoomId }, '');
@@ -100,9 +130,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
-        // User is logged in
         setUser(currentUser);
-        // Update Cache with minimal necessary data
         const serializableUser = {
             uid: currentUser.uid,
             email: currentUser.email,
@@ -112,11 +140,9 @@ const App: React.FC = () => {
         };
         localStorage.setItem(CACHE_KEY_AUTH, JSON.stringify(serializableUser));
       } else {
-        // User is logged out
         setUser(null);
         setDbUser(null);
         setLoading(false);
-        // Clear Cache
         localStorage.removeItem(CACHE_KEY_AUTH);
         localStorage.removeItem(CACHE_KEY_PROFILE);
       }
@@ -133,7 +159,6 @@ const App: React.FC = () => {
         if (docSnap.exists()) {
             const userData = docSnap.data() as UserProfile;
             
-            // CHECK BAN STATUS
             if (userData.isBanned) {
                 await signOut(auth);
                 alert("This account has been banned by the administrator.");
@@ -144,18 +169,15 @@ const App: React.FC = () => {
                 return;
             }
 
-            // Legacy check: Ensure uniqueId exists
             if (!userData.uniqueId) {
                 const uniqueId = Math.random().toString(36).substring(2, 6).toUpperCase();
                 await setDoc(userDocRef, { ...userData, uniqueId }, { merge: true });
             } else {
                 setDbUser(userData);
-                // Update Profile Cache
                 localStorage.setItem(CACHE_KEY_PROFILE, JSON.stringify(userData));
-                setLoading(false); // Ensure loading is off once we have data
+                setLoading(false); 
             }
         } else {
-            // Create profile if missing (rare case)
             const uniqueId = Math.random().toString(36).substring(2, 6).toUpperCase();
             const newUserProfile = {
                 uid: user.uid,
@@ -168,7 +190,6 @@ const App: React.FC = () => {
                 following: [],
                 walletBalance: 0
             };
-            // Don't await this for the UI update to be faster, but do it
             setDoc(userDocRef, newUserProfile);
             setDbUser(newUserProfile);
             localStorage.setItem(CACHE_KEY_PROFILE, JSON.stringify(newUserProfile));
@@ -176,33 +197,27 @@ const App: React.FC = () => {
         }
     }, (error) => {
         console.error("User snapshot error:", error);
-        // If network fails but we have cache, we are fine. 
-        // If no cache and network fails, stop loading
         if (loading) setLoading(false);
     });
 
     return () => unsubscribeSnapshot();
   }, [user?.uid]);
 
-  // Global Listener for Unread Messages (Notifications)
+  // Global Listener for Unread Messages
   useEffect(() => {
     if (!user?.uid) return;
-
     const q = query(
       collection(db, 'chats'), 
       where('participants', 'array-contains', user.uid)
     );
-
     const unsubscribe = onSnapshot(q, (snapshot) => {
       let count = 0;
       let hasNewMessage = false;
-
       snapshot.docs.forEach(doc => {
         const data = doc.data() as ChatMetadata;
         const myUnread = data.unreadCounts?.[user.uid] || 0;
         count += myUnread;
       });
-
       if (count > previousUnreadRef.current) {
          hasNewMessage = true;
       }
@@ -212,14 +227,10 @@ const App: React.FC = () => {
       if (hasNewMessage && currentView !== 'chats' && (!activeRoomId || isRoomMinimized)) {
          audioRef.current?.play().catch(() => {});
          if (document.hidden && Notification.permission === "granted") {
-            new Notification("Heartly", {
-                body: "You have a new message!",
-                icon: "/icon.png" 
-            });
+            new Notification("Heartly", { body: "You have a new message!", icon: "/icon.png" });
          }
       }
     });
-
     return () => unsubscribe();
   }, [user?.uid, currentView, activeRoomId, isRoomMinimized]);
 
@@ -238,7 +249,6 @@ const App: React.FC = () => {
               setCurrentView('rooms');
           }
       };
-
       window.addEventListener('popstate', handlePopState);
       return () => window.removeEventListener('popstate', handlePopState);
   }, [activeRoomId]);
@@ -255,18 +265,13 @@ const App: React.FC = () => {
 
   const handleProfileUpdate = async () => {
     setProfileVersion(prev => prev + 1);
-    
     if (!user?.uid) return;
-
     const userDocRef = doc(db, 'users', user.uid);
     const snap = await getDoc(userDocRef);
     if (!snap.exists()) return;
     const latestData = snap.data() as UserProfile;
-    
-    // Update local cache immediately
     localStorage.setItem(CACHE_KEY_PROFILE, JSON.stringify(latestData));
 
-    // Update Active Room Participant Data
     if (activeRoomId) {
         const roomRef = doc(db, 'rooms', activeRoomId);
         const roomSnap = await getDoc(roomRef);
@@ -274,33 +279,23 @@ const App: React.FC = () => {
             const roomData = roomSnap.data() as Room;
             const updatedParticipants = roomData.participants.map(p => {
                 if (p.uid === user.uid) {
-                    return { 
-                        ...p, 
-                        photoURL: latestData.photoURL, 
-                        displayName: latestData.displayName || p.displayName 
-                    };
+                    return { ...p, photoURL: latestData.photoURL, displayName: latestData.displayName || p.displayName };
                 }
                 return p;
             });
             await updateDoc(roomRef, { participants: updatedParticipants });
         }
     }
-
-    // Update Chats Participant Details
     const chatsQuery = query(collection(db, 'chats'), where('participants', 'array-contains', user.uid));
     const chatSnaps = await getDocs(chatsQuery);
     const batch = writeBatch(db);
-    
     chatSnaps.forEach(c => {
         const data = c.data() as ChatMetadata;
         const newDetails = data.participantDetails.map(p => 
-            p.uid === user.uid 
-            ? { ...p, photoURL: latestData.photoURL, displayName: latestData.displayName || p.displayName } 
-            : p
+            p.uid === user.uid ? { ...p, photoURL: latestData.photoURL, displayName: latestData.displayName || p.displayName } : p
         );
         batch.update(c.ref, { participantDetails: newDetails });
     });
-
     if (!chatSnaps.empty) {
         await batch.commit().catch(e => console.error("Batch update failed", e));
     }
@@ -332,7 +327,6 @@ const App: React.FC = () => {
       <div className="h-[100dvh] w-full flex flex-col items-center justify-center bg-[#020205] relative overflow-hidden">
         <div className="absolute top-[-20%] left-[-20%] w-[600px] h-[600px] bg-violet-600/10 rounded-full blur-[120px] animate-pulse" />
         <div className="absolute bottom-[-20%] right-[-20%] w-[600px] h-[600px] bg-fuchsia-600/10 rounded-full blur-[120px] animate-pulse" />
-
         <div className="relative z-10 flex flex-col items-center animate-fade-in">
            <div className="relative w-28 h-28 bg-[#0A0A0F] rounded-full border border-white/10 flex items-center justify-center shadow-2xl animate-float">
                <svg width="60" height="60" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -348,10 +342,7 @@ const App: React.FC = () => {
                    <path d="M15 9V11" stroke="url(#splashLogoGrad)" strokeWidth="1.5" strokeLinecap="round" className="drop-shadow-[0_0_10px_rgba(167,139,250,0.6)]" />
                </svg>
            </div>
-           
-           <h1 className="mt-8 text-2xl font-bold text-white tracking-widest uppercase opacity-80 animate-pulse">
-               Heartly Voice
-           </h1>
+           <h1 className="mt-8 text-2xl font-bold text-white tracking-widest uppercase opacity-80 animate-pulse">Heartly Voice</h1>
         </div>
       </div>
     );
@@ -362,7 +353,6 @@ const App: React.FC = () => {
   }
 
   const getEffectiveProfile = (fbUser: User | any): UserProfile => {
-    // If we have dbUser (cached or fresh), merge it. Otherwise use auth data.
     return {
         uid: fbUser.uid,
         email: fbUser.email,
@@ -384,35 +374,13 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (currentView) {
       case 'rooms':
-        return (
-          <VoiceRooms 
-            currentUser={userProfile} 
-            onJoinRoom={handleJoinRoom} 
-          />
-        );
+        return <VoiceRooms currentUser={userProfile} onJoinRoom={handleJoinRoom} />;
       case 'listeners':
-        return (
-          <CallListeners
-            currentUser={userProfile} 
-            onJoinRoom={handleJoinRoom}
-          />
-        );
+        return <CallListeners currentUser={userProfile} onJoinRoom={handleJoinRoom} />;
       case 'chats':
-        return (
-          <Chat 
-            currentUser={userProfile} 
-            onJoinRoom={handleJoinRoom}
-          />
-        );
+        return <Chat currentUser={userProfile} onJoinRoom={handleJoinRoom} />;
       case 'me':
-        return (
-          <Profile 
-            user={userProfile} 
-            onLogout={handleLogout} 
-            onUpdate={handleProfileUpdate}
-            onJoinRoom={handleJoinRoom}
-          />
-        );
+        return <Profile user={userProfile} onLogout={handleLogout} onUpdate={handleProfileUpdate} onJoinRoom={handleJoinRoom} />;
       default:
         return null;
     }
@@ -428,15 +396,64 @@ const App: React.FC = () => {
       </div>
 
       {activeRoomId && (
-        <div className={`absolute inset-0 z-50 transition-all duration-300 flex flex-col pt-safe ${isRoomMinimized ? 'bg-transparent pointer-events-none' : 'bg-[#181818]'}`}>
-          <ActiveRoom 
-            roomId={activeRoomId} 
-            currentUser={userProfile} 
-            onLeave={handleLeaveRoom}
-            isMinimized={isRoomMinimized}
-            onMinimize={() => setIsRoomMinimized(!isRoomMinimized)}
-          />
-        </div>
+        <>
+            {/* Main Room View (Hidden when minimized) */}
+            <div className={`absolute inset-0 z-50 transition-all duration-300 flex flex-col pt-safe ${isRoomMinimized ? 'opacity-0 pointer-events-none' : 'opacity-100 bg-[#181818]'}`}>
+              <ActiveRoom 
+                roomId={activeRoomId} 
+                currentUser={userProfile} 
+                onLeave={handleLeaveRoom}
+                isMinimized={isRoomMinimized}
+                onMinimize={() => setIsRoomMinimized(!isRoomMinimized)}
+              />
+            </div>
+
+            {/* Floating Minimized Disc */}
+            {isRoomMinimized && (
+                <div 
+                    style={{ left: discPosition.x, top: discPosition.y }}
+                    className="fixed z-[100] touch-none"
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    onMouseDown={handleTouchStart}
+                    onMouseMove={handleTouchMove as any}
+                    onMouseUp={handleTouchEnd}
+                    onClick={handleDiscClick}
+                >
+                    <div className="relative group cursor-pointer transition-transform active:scale-95">
+                         {/* Spinning Disc Effect */}
+                         <div className="w-16 h-16 rounded-full bg-[#18181B] border-2 border-white/10 overflow-hidden shadow-[0_0_20px_rgba(139,92,246,0.3)] animate-[spin_5s_linear_infinite] flex items-center justify-center relative">
+                             {/* Vinyl Grooves */}
+                             <div className="absolute inset-0 rounded-full border-[6px] border-black/40"></div>
+                             <div className="absolute inset-3 rounded-full border-[6px] border-black/30"></div>
+                             
+                             {/* Center Icon */}
+                             <div className="w-6 h-6 bg-gradient-to-tr from-violet-600 to-fuchsia-600 rounded-full flex items-center justify-center relative z-10 border border-white/20">
+                                 <Mic size={12} className="text-white" />
+                             </div>
+                             
+                             {/* Reflection */}
+                             <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent rounded-full pointer-events-none"></div>
+                         </div>
+                         
+                         {/* Pulse Glow */}
+                         <div className="absolute -inset-1 bg-violet-500/20 rounded-full blur-md animate-pulse -z-10"></div>
+
+                         {/* Close/Leave Button */}
+                         <button 
+                             onClick={(e) => {
+                                 e.stopPropagation();
+                                 handleLeaveRoom();
+                             }}
+                             className="absolute -right-2 -top-2 w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg border-2 border-[#050505] active:scale-90 transition-transform z-20"
+                         >
+                             <X size={14} strokeWidth={3} />
+                         </button>
+                    </div>
+                </div>
+            )}
+        </>
       )}
     </div>
   );
