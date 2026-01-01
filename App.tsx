@@ -1,8 +1,9 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { auth, db } from './firebase';
+import { auth, db, messaging } from './firebase';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { doc, getDoc, setDoc, collection, query, where, onSnapshot, updateDoc, writeBatch, getDocs } from 'firebase/firestore';
+import { getToken, onMessage } from 'firebase/messaging';
 import { Auth } from './components/Auth';
 import { VoiceRooms } from './components/VoiceRooms';
 import { ActiveRoom } from './components/Room';
@@ -11,7 +12,7 @@ import { Navigation } from './components/Navigation';
 import { Chat } from './components/Chat';
 import { CallListeners } from './components/CallListeners';
 import { ViewState, UserProfile, ChatMetadata, Room } from './types';
-import { X, Disc3, Mic } from 'lucide-react';
+import { X, Disc3, Mic, Bell } from 'lucide-react';
 
 // Cache keys
 const CACHE_KEY_AUTH = 'heartly_cached_auth_user';
@@ -92,7 +93,6 @@ const App: React.FC = () => {
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
 
-    // Boundary checks
     const newX = Math.min(Math.max(0, clientX - dragOffsetRef.current.x), window.innerWidth - 70);
     const newY = Math.min(Math.max(0, clientY - dragOffsetRef.current.y), window.innerHeight - 70);
 
@@ -125,6 +125,56 @@ const App: React.FC = () => {
         }
     }
   }, []); 
+
+  // -- FCM NOTIFICATION SETUP --
+  useEffect(() => {
+    const setupNotifications = async () => {
+        if (!user?.uid) return;
+        
+        try {
+            const msg = await messaging();
+            if (msg) {
+                // 1. Request Permission
+                const permission = await Notification.requestPermission();
+                
+                if (permission === 'granted') {
+                    // 2. Get Token with VAPID Key
+                    const token = await getToken(msg, { 
+                        vapidKey: 'BFQgJUfYvYFqDYtcgp-QMUBHn2wC6CoqlIomLyPEEnffLhtivpp7yaJV9fgop7nzVQwzvV_Udq35Ex3wveSW4-Q' 
+                    });
+
+                    if (token) {
+                        // 3. Save Token to Firestore for targeted notifications
+                        const userRef = doc(db, 'users', user.uid);
+                        await updateDoc(userRef, { fcmToken: token });
+                    }
+
+                    // 4. Handle Foreground Messages (App Open)
+                    onMessage(msg, (payload) => {
+                        console.log('Message received. ', payload);
+                        // Play sound
+                        audioRef.current?.play().catch(() => {});
+                        // Show visual toast/notification inside app
+                        const title = payload.notification?.title || 'New Message';
+                        const body = payload.notification?.body || '';
+                        
+                        // Fallback browser notification if tab is focused but user might be looking away
+                        if (Notification.permission === 'granted') {
+                            new Notification(title, { body, icon: '/icon.png' });
+                        }
+                    });
+                }
+            }
+        } catch (error) {
+            console.error("Notification setup failed", error);
+        }
+    };
+
+    if (user?.uid) {
+        setupNotifications();
+    }
+  }, [user?.uid]);
+
 
   // 1. Auth Listener (Network)
   useEffect(() => {
@@ -225,9 +275,20 @@ const App: React.FC = () => {
       setTotalUnread(count);
 
       if (hasNewMessage && currentView !== 'chats' && (!activeRoomId || isRoomMinimized)) {
+         // Play sound
          audioRef.current?.play().catch(() => {});
-         if (document.hidden && Notification.permission === "granted") {
-            new Notification("Heartly", { body: "You have a new message!", icon: "/icon.png" });
+         
+         // Trigger System Notification (Local Simulation for Chat)
+         if (Notification.permission === "granted") {
+            // Check visibility state: if hidden, definitely show notification
+            // if visible, only show if not in chats view (already handled by if condition above)
+            if (document.visibilityState === 'hidden') {
+                new Notification("Heartly Voice", {
+                    body: "You have a new private message!",
+                    icon: "/icon.png",
+                    tag: "chat-msg" // prevents stacking too many
+                });
+            }
          }
       }
     });
