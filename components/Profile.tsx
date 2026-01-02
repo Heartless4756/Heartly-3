@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { UserProfile, Room, Report, Sticker, RoomBackground } from '../types';
+import { UserProfile, Room, Report, Sticker, RoomBackground, GiftItem } from '../types';
 import { updateProfile } from 'firebase/auth';
 import { doc, updateDoc, increment, getDoc, arrayRemove, arrayUnion, collection, query, where, getDocs, deleteDoc, orderBy, addDoc, setDoc, limit, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -45,7 +45,8 @@ import {
   ChevronUp,
   UserX,
   Smile,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Gift
 } from 'lucide-react';
 
 interface ProfileProps {
@@ -57,7 +58,7 @@ interface ProfileProps {
 
 const ADMIN_EMAIL = "sv116774@gmail.com";
 
-type AdminTab = 'dashboard' | 'users' | 'rooms' | 'listeners' | 'reports' | 'stickers' | 'backgrounds';
+type AdminTab = 'dashboard' | 'users' | 'rooms' | 'listeners' | 'reports' | 'stickers' | 'backgrounds' | 'gifts';
 
 interface SettingsItemProps {
   onClick: () => void;
@@ -175,10 +176,22 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   // Admin: Reports
   const [adminReports, setAdminReports] = useState<Report[]>([]);
 
-  // Admin: Stickers
+  // Admin: Stickers & Gifts
   const [adminStickers, setAdminStickers] = useState<Sticker[]>([]);
+  const [adminGifts, setAdminGifts] = useState<GiftItem[]>([]);
   const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
+  
+  // Gift Form
+  const [newGiftName, setNewGiftName] = useState('');
+  const [newGiftPrice, setNewGiftPrice] = useState(10);
+  const [giftIconUploading, setGiftIconUploading] = useState(false);
+  const [giftAnimUploading, setGiftAnimUploading] = useState(false);
+  const [tempGiftIcon, setTempGiftIcon] = useState('');
+  const [tempGiftAnim, setTempGiftAnim] = useState('');
+
   const stickerInputRef = useRef<HTMLInputElement>(null);
+  const giftIconInputRef = useRef<HTMLInputElement>(null);
+  const giftAnimInputRef = useRef<HTMLInputElement>(null);
 
   // Admin: Backgrounds
   const [adminBackgrounds, setAdminBackgrounds] = useState<RoomBackground[]>([]);
@@ -281,13 +294,19 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       const stickersData = stickersSnap.docs.map(d => ({ ...d.data(), id: d.id } as Sticker));
       setAdminStickers(stickersData);
 
-      // 7. Backgrounds
+      // 7. Gifts
+      const giftsQuery = query(collection(db, 'gifts'), orderBy('price', 'asc'));
+      const giftsSnap = await getDocs(giftsQuery);
+      const giftsData = giftsSnap.docs.map(d => ({ ...d.data(), id: d.id } as GiftItem));
+      setAdminGifts(giftsData);
+
+      // 8. Backgrounds
       const bgQuery = query(collection(db, 'roomBackgrounds'), orderBy('createdAt', 'desc'));
       const bgSnap = await getDocs(bgQuery);
       const bgData = bgSnap.docs.map(d => ({ ...d.data(), id: d.id } as RoomBackground));
       setAdminBackgrounds(bgData);
 
-      // 8. System Config
+      // 9. System Config
       const sysDoc = await getDoc(doc(db, 'system', 'general'));
       if (sysDoc.exists()) {
           setMaintenanceMode(sysDoc.data().maintenanceMode || false);
@@ -308,19 +327,25 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
     }
   };
 
+  const uploadFileToCloudinary = async (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', 'Heartly image');
+      // Use raw for SVGA, image for PNG/JPG
+      const resourceType = file.name.endsWith('.svga') ? 'raw' : 'image';
+      const response = await fetch(`https://api.cloudinary.com/v1_1/dtxvdtt78/${resourceType}/upload`, { method: 'POST', body: formData });
+      const data = await response.json();
+      return data.secure_url;
+  };
+
   const handleStickerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
       setLoading(true);
       try {
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('upload_preset', 'Heartly image');
-          const response = await fetch('https://api.cloudinary.com/v1_1/dtxvdtt78/image/upload', { method: 'POST', body: formData });
-          const data = await response.json();
-          
+          const url = await uploadFileToCloudinary(file);
           await addDoc(collection(db, 'stickers'), {
-              url: data.secure_url,
+              url: url,
               name: file.name,
               createdAt: Date.now()
           });
@@ -330,23 +355,69 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       } catch (e) { console.error(e); alert("Failed to upload sticker"); } finally { setLoading(false); }
   };
 
+  const handleGiftIconUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setGiftIconUploading(true);
+      try {
+          const url = await uploadFileToCloudinary(file);
+          setTempGiftIcon(url);
+      } catch (e) { console.error(e); alert("Failed"); } finally { setGiftIconUploading(false); }
+  };
+
+  const handleGiftAnimUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setGiftAnimUploading(true);
+      try {
+          const url = await uploadFileToCloudinary(file);
+          setTempGiftAnim(url);
+      } catch (e) { console.error(e); alert("Failed"); } finally { setGiftAnimUploading(false); }
+  };
+
+  const handleCreateGift = async () => {
+      if (!newGiftName || !newGiftPrice || !tempGiftIcon) {
+          alert("Name, Price and Icon are required.");
+          return;
+      }
+      setLoading(true);
+      try {
+          await addDoc(collection(db, 'gifts'), {
+              name: newGiftName,
+              price: newGiftPrice,
+              iconUrl: tempGiftIcon,
+              animationUrl: tempGiftAnim || null,
+              createdAt: Date.now()
+          });
+          alert("Gift Created!");
+          setNewGiftName('');
+          setNewGiftPrice(10);
+          setTempGiftIcon('');
+          setTempGiftAnim('');
+          fetchAdminStats();
+      } catch(e) { console.error(e); } finally { setLoading(false); }
+  };
+
+  const handleDeleteGift = async (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      if(!window.confirm("Delete gift?")) return;
+      try {
+          await deleteDoc(doc(db, 'gifts', id));
+          setAdminGifts(prev => prev.filter(g => g.id !== id));
+      } catch(e) { console.error(e); }
+  };
+
   const handleBackgroundUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
       setLoading(true);
       try {
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('upload_preset', 'Heartly image');
-          const response = await fetch('https://api.cloudinary.com/v1_1/dtxvdtt78/image/upload', { method: 'POST', body: formData });
-          const data = await response.json();
-          
+          const url = await uploadFileToCloudinary(file);
           await addDoc(collection(db, 'roomBackgrounds'), {
-              url: data.secure_url,
+              url: url,
               name: file.name,
               createdAt: Date.now()
           });
-          
           alert("Background added!");
           fetchAdminStats();
       } catch (e) { console.error(e); alert("Failed to upload background"); } finally { setLoading(false); }
@@ -522,12 +593,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
     if (!file) return;
     setUploading(true);
     try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('upload_preset', 'Heartly image');
-        const response = await fetch('https://api.cloudinary.com/v1_1/dtxvdtt78/image/upload', { method: 'POST', body: formData });
-        const data = await response.json();
-        setEditedPhoto(data.secure_url);
+        const url = await uploadFileToCloudinary(file);
+        setEditedPhoto(url);
     } catch (error) { console.error(error); alert("Upload failed."); } finally { setUploading(false); }
   };
 
@@ -536,14 +603,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
     if (!file || !fetchedAdminUser) return;
     setLoading(true);
     try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('upload_preset', 'Heartly image');
-        const response = await fetch('https://api.cloudinary.com/v1_1/dtxvdtt78/image/upload', { method: 'POST', body: formData });
-        const data = await response.json();
+        const url = await uploadFileToCloudinary(file);
         const userRef = doc(db, 'users', fetchedAdminUser.uid);
-        await updateDoc(userRef, { photoURL: data.secure_url, updatedAt: Date.now() });
-        setFetchedAdminUser(prev => prev ? { ...prev, photoURL: data.secure_url } : null);
+        await updateDoc(userRef, { photoURL: url, updatedAt: Date.now() });
+        setFetchedAdminUser(prev => prev ? { ...prev, photoURL: url } : null);
         alert("Profile picture updated.");
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
@@ -816,6 +879,66 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                   </div>
               ))}
               {adminBackgrounds.length === 0 && <p className="text-gray-500 col-span-full text-center py-20 bg-white/5 rounded-2xl border border-dashed border-white/10">No backgrounds uploaded yet.</p>}
+          </div>
+      </div>
+  );
+
+  const renderAdminGifts = () => (
+      <div className="h-full flex flex-col animate-fade-in">
+          <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-white">Gift Manager</h2>
+          </div>
+
+          {/* Add Gift Form */}
+          <div className="bg-[#18181B] border border-white/10 rounded-2xl p-5 mb-6">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Upload New Gift</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                      <label className="text-[10px] text-gray-500 font-bold uppercase mb-1 block">Gift Name</label>
+                      <input type="text" value={newGiftName} onChange={(e) => setNewGiftName(e.target.value)} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none" placeholder="e.g. Rose" />
+                  </div>
+                  <div>
+                      <label className="text-[10px] text-gray-500 font-bold uppercase mb-1 block">Price (Coins)</label>
+                      <input type="number" value={newGiftPrice} onChange={(e) => setNewGiftPrice(parseInt(e.target.value))} className="w-full bg-black/30 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none" placeholder="10" />
+                  </div>
+              </div>
+              
+              <div className="flex gap-4 mt-4">
+                  <div className="flex-1">
+                      <label className="text-[10px] text-gray-500 font-bold uppercase mb-1 block">Icon (PNG/JPG)</label>
+                      <input type="file" ref={giftIconInputRef} className="hidden" accept="image/*" onChange={handleGiftIconUpload} />
+                      <button onClick={() => giftIconInputRef.current?.click()} className="w-full py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-gray-300 hover:text-white hover:bg-white/10 flex items-center justify-center gap-2">
+                          {giftIconUploading ? <Loader2 className="animate-spin" size={14}/> : <Camera size={14}/>} {tempGiftIcon ? 'Icon Uploaded' : 'Upload Icon'}
+                      </button>
+                  </div>
+                  <div className="flex-1">
+                      <label className="text-[10px] text-gray-500 font-bold uppercase mb-1 block">Animation (.SVGA)</label>
+                      <input type="file" ref={giftAnimInputRef} className="hidden" accept=".svga" onChange={handleGiftAnimUpload} />
+                      <button onClick={() => giftAnimInputRef.current?.click()} className="w-full py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-gray-300 hover:text-white hover:bg-white/10 flex items-center justify-center gap-2">
+                          {giftAnimUploading ? <Loader2 className="animate-spin" size={14}/> : <Camera size={14}/>} {tempGiftAnim ? 'Anim Uploaded' : 'Upload SVGA'}
+                      </button>
+                  </div>
+              </div>
+
+              <div className="flex justify-end mt-4">
+                  <button onClick={handleCreateGift} disabled={loading || giftIconUploading || giftAnimUploading} className="px-6 py-2 bg-violet-600 text-white font-bold rounded-xl text-xs shadow-lg hover:bg-violet-500 disabled:opacity-50">Create Gift</button>
+              </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 overflow-y-auto pb-4">
+              {adminGifts.map(gift => (
+                  <div key={gift.id} className="relative group bg-[#1A1A21] rounded-xl p-3 border border-white/5 flex flex-col items-center">
+                      <img src={gift.iconUrl} className="w-12 h-12 object-contain mb-2" />
+                      <p className="text-xs font-bold text-white">{gift.name}</p>
+                      <div className="flex items-center gap-1 text-[10px] text-yellow-500 font-bold">
+                          <Coins size={10} /> {gift.price}
+                      </div>
+                      {gift.animationUrl && <span className="absolute top-2 left-2 text-[8px] bg-violet-500 text-white px-1 rounded">SVGA</span>}
+                      <button onClick={(e) => handleDeleteGift(e, gift.id)} className="absolute top-2 right-2 p-1.5 bg-red-500/20 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors">
+                          <Trash2 size={12}/>
+                      </button>
+                  </div>
+              ))}
           </div>
       </div>
   );
@@ -1289,6 +1412,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                     { id: 'users', label: 'User Mgmt', icon: Users },
                     { id: 'rooms', label: 'Rooms', icon: Mic },
                     { id: 'reports', label: 'Reports', icon: Flag },
+                    { id: 'gifts', label: 'Gifts', icon: Gift },
                     { id: 'listeners', label: 'Listeners', icon: Headphones },
                     { id: 'stickers', label: 'Stickers', icon: Smile },
                     { id: 'backgrounds', label: 'Backgrounds', icon: ImageIcon },
@@ -1335,6 +1459,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                      {adminTab === 'reports' && renderAdminReports()}
                      {adminTab === 'stickers' && renderAdminStickers()}
                      {adminTab === 'backgrounds' && renderAdminBackgrounds()}
+                     {adminTab === 'gifts' && renderAdminGifts()}
                  </div>
             </div>
         </div>

@@ -18,7 +18,7 @@ import {
   getDocs,
   increment
 } from 'firebase/firestore';
-import { UserProfile, Room as RoomType, Participant, ChatMetadata, Sticker, RoomBackground } from '../types';
+import { UserProfile, Room as RoomType, Participant, ChatMetadata, Sticker, RoomBackground, GiftItem } from '../types';
 import { 
   Mic, MicOff, Crown, Send, 
   Lock, Unlock, LogOut, UserPlus, X as XIcon, 
@@ -48,6 +48,7 @@ interface Message {
   type?: 'user' | 'system' | 'gift'; 
   giftIcon?: string;
   giftName?: string;
+  giftAnimationUrl?: string; // New: Animation URL for SVGA
 }
 
 interface Invite {
@@ -92,23 +93,6 @@ const ICE_SERVERS = {
     { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
   ],
 };
-
-const GIFTS = [
-  { id: 'rose', name: 'Rose', icon: '🌹', price: 5 },
-  { id: 'heart', name: 'Heart', icon: '💖', price: 10 },
-  { id: 'kiss', name: 'Kiss', icon: '💋', price: 15 },
-  { id: 'chocolate', name: 'Chocolate', icon: '🍫', price: 20 },
-  { id: 'perfume', name: 'Perfume', icon: '🧴', price: 30 },
-  { id: 'diamond', name: 'Diamond', icon: '💎', price: 50 },
-  { id: 'rocket', name: 'Rocket', icon: '🚀', price: 100 },
-  { id: 'ring', name: 'Ring', icon: '💍', price: 200 },
-  { id: 'crown', name: 'Crown', icon: '👑', price: 500 },
-  { id: 'car', name: 'Sports Car', icon: '🏎️', price: 1000 },
-  { id: 'yacht', name: 'Yacht', icon: '🛥️', price: 2000 },
-  { id: 'plane', name: 'Private Jet', icon: '✈️', price: 3000 },
-  { id: 'castle', name: 'Castle', icon: '🏰', price: 5000 },
-  { id: 'dragon', name: 'Dragon', icon: '🐉', price: 10000 },
-];
 
 const RemoteAudio: React.FC<{ stream: any, muted: boolean }> = ({ stream, muted }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -297,6 +281,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
     const [isSearchingMusic, setIsSearchingMusic] = useState(false);
     const [showGiftModal, setShowGiftModal] = useState(false);
     const [giftRecipientId, setGiftRecipientId] = useState<string | null>(null);
+    const [gifts, setGifts] = useState<GiftItem[]>([]);
     
     // Stickers State
     const [showStickerPicker, setShowStickerPicker] = useState(false);
@@ -304,6 +289,11 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
 
     // Gift Animation State
     const [giftAnimation, setGiftAnimation] = useState<{ icon: string; name: string; senderName: string } | null>(null);
+    const [currentSvga, setCurrentSvga] = useState<string | null>(null);
+    const animationQueueRef = useRef<string[]>([]);
+    const isPlayingSvgaRef = useRef(false);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const playerRef = useRef<any>(null); // SVGA Player instance
 
     const musicAudioRef = useRef<HTMLAudioElement | null>(null);
     const musicInputRef = useRef<HTMLInputElement>(null);
@@ -341,13 +331,22 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         prevParticipantsRef.current = participants;
     }, [participants, currentUser.uid]);
 
-    // Fetch stickers
+    // Fetch Stickers and Gifts
     useEffect(() => {
-        const q = query(collection(db, 'stickers'), orderBy('createdAt', 'desc'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        const qStickers = query(collection(db, 'stickers'), orderBy('createdAt', 'desc'));
+        const unsubStickers = onSnapshot(qStickers, (snapshot) => {
             setStickers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Sticker)));
         });
-        return () => unsubscribe();
+
+        const qGifts = query(collection(db, 'gifts'), orderBy('price', 'asc'));
+        const unsubGifts = onSnapshot(qGifts, (snapshot) => {
+            setGifts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GiftItem)));
+        });
+
+        return () => {
+            unsubStickers();
+            unsubGifts();
+        };
     }, []);
 
     // Fetch room backgrounds
@@ -367,6 +366,54 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
             setSettingsBg(roomData.backgroundImage || '');
         }
     }, [roomData, showSettingsModal]);
+
+    // SVGA Player Logic
+    useEffect(() => {
+        const playNextAnimation = () => {
+            if (animationQueueRef.current.length === 0 || isPlayingSvgaRef.current || !canvasRef.current) return;
+            
+            const nextUrl = animationQueueRef.current.shift();
+            if (!nextUrl) return;
+
+            isPlayingSvgaRef.current = true;
+            setCurrentSvga(nextUrl);
+
+            try {
+                if (!(window as any).SVGA) return;
+                
+                if (!playerRef.current) {
+                    playerRef.current = new (window as any).SVGA.Player('#svga-canvas');
+                }
+                
+                const parser = new (window as any).SVGA.Parser();
+                parser.load(nextUrl, (videoItem: any) => {
+                    playerRef.current.setVideoItem(videoItem);
+                    playerRef.current.startAnimation();
+                    
+                    playerRef.current.onFinished(() => {
+                        playerRef.current.clear();
+                        setCurrentSvga(null);
+                        isPlayingSvgaRef.current = false;
+                        playNextAnimation(); // Check for more
+                    });
+                }, (err: any) => {
+                    console.error("SVGA load error", err);
+                    isPlayingSvgaRef.current = false;
+                    setCurrentSvga(null);
+                    playNextAnimation();
+                });
+
+            } catch (e) {
+                console.error("SVGA Player error", e);
+                isPlayingSvgaRef.current = false;
+                setCurrentSvga(null);
+            }
+        };
+
+        if (animationQueueRef.current.length > 0 && !isPlayingSvgaRef.current) {
+            playNextAnimation();
+        }
+    }, [currentSvga]); // React to state change to re-trigger if needed, though most logic is in function
 
     useEffect(() => {
         if (!roomData?.isPaidCall) return;
@@ -496,9 +543,20 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
             snapshot.docChanges().forEach((change) => {
                 if (change.type === 'added') {
                     const data = change.doc.data() as Message;
-                    if (data.type === 'gift' && data.giftIcon && (Date.now() - data.createdAt < 3000)) {
-                        setGiftAnimation({ icon: data.giftIcon, name: data.giftName || 'Gift', senderName: data.senderName });
-                        setTimeout(() => setGiftAnimation(null), 4000);
+                    
+                    // Handle Gift Messages
+                    if (data.type === 'gift' && (Date.now() - data.createdAt < 5000)) {
+                        // 1. Show Small icon animation
+                        if (data.giftIcon) {
+                            setGiftAnimation({ icon: data.giftIcon, name: data.giftName || 'Gift', senderName: data.senderName });
+                            setTimeout(() => setGiftAnimation(null), 4000);
+                        }
+                        // 2. Queue SVGA Animation
+                        if (data.giftAnimationUrl) {
+                            animationQueueRef.current.push(data.giftAnimationUrl);
+                            // Trigger queue check
+                            setCurrentSvga((prev) => prev); // Hacky force update to trigger effect
+                        }
                     }
                 }
             });
@@ -665,7 +723,8 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
     const saveRoomSettings = async () => { if(!roomData) return; await updateDoc(doc(db, 'rooms', roomId), { name: settingsName, password: settingsPassword, backgroundImage: settingsBg }); setShowSettingsModal(false); };
     const toggleSeatLock = async (seatIndex: number) => { const isLocked = roomData?.lockedSeats?.includes(seatIndex); if (isLocked) await updateDoc(doc(db, 'rooms', roomId), { lockedSeats: arrayRemove(seatIndex) }); else await updateDoc(doc(db, 'rooms', roomId), { lockedSeats: arrayUnion(seatIndex) }); setPopupInfo(null); };
     const handleInviteToSeat = (seatIndex: number) => { setInviteSeatIndex(seatIndex); setPopupInfo(null); setShowInviteList(true); };
-    const handleGiftClick = async (gift: typeof GIFTS[0]) => { 
+    
+    const handleGiftClick = async (gift: GiftItem) => { 
         if ((currentUser.walletBalance || 0) < gift.price) { alert("Not enough coins!"); return; } 
         if (!giftRecipientId) { alert("Select a recipient."); return; }
         const recipient = participants.find(p => p.uid === giftRecipientId);
@@ -675,7 +734,18 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
             batch.update(doc(db, 'users', currentUser.uid), { walletBalance: increment(-gift.price) }); 
             batch.update(doc(db, 'users', recipient.uid), { walletBalance: increment(gift.price) }); 
             await batch.commit(); 
-            await addDoc(collection(db, 'rooms', roomId, 'messages'), { text: `sent a ${gift.name} to ${recipient.displayName} (${gift.price} coins)`, senderId: currentUser.uid, senderName: currentUser.displayName, senderPhoto: currentUser.photoURL, createdAt: Date.now(), type: 'gift', giftIcon: gift.icon, giftName: gift.name }); 
+            
+            await addDoc(collection(db, 'rooms', roomId, 'messages'), { 
+                text: `sent a ${gift.name} to ${recipient.displayName} (${gift.price} coins)`, 
+                senderId: currentUser.uid, 
+                senderName: currentUser.displayName, 
+                senderPhoto: currentUser.photoURL, 
+                createdAt: Date.now(), 
+                type: 'gift', 
+                giftIcon: gift.iconUrl, 
+                giftName: gift.name,
+                giftAnimationUrl: gift.animationUrl // Pass animation URL
+            }); 
             setShowGiftModal(false); 
         } 
     };
@@ -776,6 +846,12 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                 src={roomData?.backgroundImage || "https://images.unsplash.com/photo-1614850523060-8da1d56ae167?q=80&w=2070&auto=format&fit=crop"} 
                 className="absolute inset-0 w-full h-full object-cover opacity-60 z-0 pointer-events-none" 
             />
+            
+            {/* SVGA Player Overlay (Full Screen, High Z-Index) */}
+            <div className={`absolute inset-0 z-50 pointer-events-none flex items-center justify-center ${currentSvga ? 'block' : 'hidden'}`}>
+                <div id="svga-canvas" className="w-full h-full max-w-[500px] max-h-[500px] object-contain"></div>
+            </div>
+
             <div className="flex items-center justify-between px-4 py-4 relative z-20">
                 <div className="flex items-center gap-2">
                     <button onClick={onMinimize} className="p-2 text-white/80 hover:text-white rounded-full hover:bg-white/10"><Minimize2 size={20}/></button>
@@ -798,7 +874,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
             </div>
             <div className="relative flex-1 overflow-hidden z-10 flex flex-col">
                  <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none px-4 space-y-2">{entryNotifications.map(n => (<div key={n.id} className="animate-fade-in bg-black/40 backdrop-blur-md text-white text-[10px] px-3 py-1.5 rounded-full w-fit mx-auto border border-white/5 flex items-center gap-2 shadow-lg"><span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"/> {n.text}</div>))}</div>
-                 {giftAnimation && (<div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none overflow-hidden"><div className="absolute inset-0 bg-radial-gradient from-violet-600/30 to-transparent animate-pulse duration-700"></div><div className="absolute inset-0 flex items-center justify-center">{[...Array(12)].map((_, i) => (<div key={i} className="absolute w-2 h-2 bg-yellow-400 rounded-full animate-[ping_1.5s_infinite]" style={{ transform: `rotate(${i * 30}deg) translate(120px) scale(${Math.random()})`, animationDelay: `${Math.random() * 0.5}s` }}></div>))}</div><div className="relative flex flex-col items-center animate-[fadeIn_0.5s_ease-out_forwards]"><div className="text-[120px] filter drop-shadow-[0_20px_30px_rgba(0,0,0,0.6)] animate-[bounce_2s_infinite]" style={{ transform: 'rotate3d(1, 1, 0, 15deg)', textShadow: '0 10px 0px rgba(0,0,0,0.3)' }}>{giftAnimation.icon}</div><div className="mt-8 bg-black/60 backdrop-blur-xl border border-white/20 px-6 py-3 rounded-full shadow-2xl animate-fade-in text-center transform scale-110"><p className="text-white font-bold text-lg leading-tight bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-orange-300 to-yellow-300 animate-pulse">{giftAnimation.senderName}</p><p className="text-white/80 text-xs font-medium uppercase tracking-widest mt-1">sent {giftAnimation.name}</p></div></div></div>)}
+                 {giftAnimation && (<div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none overflow-hidden"><div className="absolute inset-0 bg-radial-gradient from-violet-600/30 to-transparent animate-pulse duration-700"></div><div className="absolute inset-0 flex items-center justify-center">{[...Array(12)].map((_, i) => (<div key={i} className="absolute w-2 h-2 bg-yellow-400 rounded-full animate-[ping_1.5s_infinite]" style={{ transform: `rotate(${i * 30}deg) translate(120px) scale(${Math.random()})`, animationDelay: `${Math.random() * 0.5}s` }}></div>))}</div><div className="relative flex flex-col items-center animate-[fadeIn_0.5s_ease-out_forwards]"><div className="w-32 h-32 mb-4 filter drop-shadow-[0_20px_30px_rgba(0,0,0,0.6)] animate-[bounce_2s_infinite]"><img src={giftAnimation.icon} className="w-full h-full object-contain" /></div><div className="mt-8 bg-black/60 backdrop-blur-xl border border-white/20 px-6 py-3 rounded-full shadow-2xl animate-fade-in text-center transform scale-110"><p className="text-white font-bold text-lg leading-tight bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-orange-300 to-yellow-300 animate-pulse">{giftAnimation.senderName}</p><p className="text-white/80 text-xs font-medium uppercase tracking-widest mt-1">sent {giftAnimation.name}</p></div></div></div>)}
                  
                  {/* Seats Container - Moved to Top */}
                  <div className="flex-shrink-0 flex flex-col items-center mt-1 px-4 max-w-md mx-auto w-full z-10">
@@ -875,7 +951,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                     </div>
                 </div>
             )}
-            {showGiftModal && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex flex-col justify-end animate-fade-in" onClick={() => setShowGiftModal(false)}><div className="bg-[#18181B] rounded-t-[2rem] border-t border-white/10 p-6 shadow-2xl" onClick={e => e.stopPropagation()}><div className="w-12 h-1.5 bg-white/10 rounded-full mx-auto mb-6"></div><div className="flex justify-between items-end mb-4"><div><h3 className="text-lg font-bold text-white">Send Gift</h3><p className="text-xs text-gray-400">To: {participants.find(p => p.uid === giftRecipientId)?.displayName || 'Select User'}</p></div><div className="bg-yellow-500/10 px-3 py-1.5 rounded-full border border-yellow-500/20 text-yellow-500 text-xs font-bold flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-500"></span>{currentUser.walletBalance || 0}</div></div><div className="flex gap-4 overflow-x-auto pb-4 mb-4 no-scrollbar">{participants.map(p => (<button key={p.uid} onClick={() => setGiftRecipientId(p.uid)} className={`flex flex-col items-center gap-2 min-w-[60px] transition-all ${giftRecipientId === p.uid ? 'opacity-100 scale-105' : 'opacity-50 hover:opacity-80'}`}><div className={`relative p-0.5 rounded-full ${giftRecipientId === p.uid ? 'bg-gradient-to-tr from-pink-500 to-violet-500' : 'bg-transparent'}`}><img src={p.photoURL || ''} className="w-12 h-12 rounded-full bg-gray-800 object-cover border-2 border-[#18181B]" /></div><span className="text-[10px] text-white font-medium truncate w-14 text-center">{p.displayName}</span></button>))}</div><div className="grid grid-cols-4 gap-3 max-h-[40vh] overflow-y-auto p-1">{GIFTS.map(gift => (<button key={gift.id} onClick={() => handleGiftClick(gift)} className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-white/5 transition-colors border border-transparent hover:border-white/10 active:scale-95"><span className="text-3xl mb-1 filter drop-shadow-lg">{gift.icon}</span><span className="text-[10px] font-bold text-gray-300">{gift.name}</span><span className="text-[10px] font-mono text-yellow-500">{gift.price}</span></button>))}</div></div></div>)}
+            {showGiftModal && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex flex-col justify-end animate-fade-in" onClick={() => setShowGiftModal(false)}><div className="bg-[#18181B] rounded-t-[2rem] border-t border-white/10 p-6 shadow-2xl" onClick={e => e.stopPropagation()}><div className="w-12 h-1.5 bg-white/10 rounded-full mx-auto mb-6"></div><div className="flex justify-between items-end mb-4"><div><h3 className="text-lg font-bold text-white">Send Gift</h3><p className="text-xs text-gray-400">To: {participants.find(p => p.uid === giftRecipientId)?.displayName || 'Select User'}</p></div><div className="bg-yellow-500/10 px-3 py-1.5 rounded-full border border-yellow-500/20 text-yellow-500 text-xs font-bold flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-500"></span>{currentUser.walletBalance || 0}</div></div><div className="flex gap-4 overflow-x-auto pb-4 mb-4 no-scrollbar">{participants.map(p => (<button key={p.uid} onClick={() => setGiftRecipientId(p.uid)} className={`flex flex-col items-center gap-2 min-w-[60px] transition-all ${giftRecipientId === p.uid ? 'opacity-100 scale-105' : 'opacity-50 hover:opacity-80'}`}><div className={`relative p-0.5 rounded-full ${giftRecipientId === p.uid ? 'bg-gradient-to-tr from-pink-500 to-violet-500' : 'bg-transparent'}`}><img src={p.photoURL || ''} className="w-12 h-12 rounded-full bg-gray-800 object-cover border-2 border-[#18181B]" /></div><span className="text-[10px] text-white font-medium truncate w-14 text-center">{p.displayName}</span></button>))}</div><div className="grid grid-cols-4 gap-3 max-h-[40vh] overflow-y-auto p-1">{gifts.length > 0 ? gifts.map(gift => (<button key={gift.id} onClick={() => handleGiftClick(gift)} className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-white/5 transition-colors border border-transparent hover:border-white/10 active:scale-95"><img src={gift.iconUrl} className="w-10 h-10 object-contain mb-1 filter drop-shadow-lg" /><span className="text-[10px] font-bold text-gray-300">{gift.name}</span><span className="text-[10px] font-mono text-yellow-500">{gift.price}</span></button>)) : <p className="col-span-4 text-center text-gray-500 text-xs">No gifts available.</p>}</div></div></div>)}
             {showRoomMenu && (<div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex justify-end" onClick={() => setShowRoomMenu(false)}><div className="w-64 h-full bg-[#18181B] border-l border-white/10 p-6 animate-fade-in shadow-2xl" onClick={e => e.stopPropagation()}><h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Room Menu</h3><div className="space-y-2">{(isHost || isAdmin) && (<MenuButton icon={musicEnabled ? <VolumeX size={20} /> : <Volume2 size={20} />} label={musicEnabled ? "Disable Music" : "Enable Music"} onClick={toggleMusicVisibility} />)}<MenuButton icon={<Share2 size={20} />} label="Share Room" onClick={handleShareClick} />{(isHost || isAdmin) && (<MenuButton icon={<Lock size={20} />} label="Room Settings" onClick={() => { setShowSettingsModal(true); setShowRoomMenu(false); }} />)}</div></div></div>)}
             {showViewerList && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md p-4 animate-fade-in" onClick={() => setShowViewerList(false)}><div className="bg-[#18181B] h-full w-full max-w-sm mx-auto rounded-3xl border border-white/10 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/5 flex justify-between items-center"><h3 className="font-bold text-white flex items-center gap-2"><Users size={18} /> Viewers ({participants.length})</h3><button onClick={() => setShowViewerList(false)}><XIcon size={20} className="text-gray-400" /></button></div><div className="flex-1 overflow-y-auto p-2 space-y-2">{sortedViewerList.map(p => (<div key={p.uid} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5" onClick={() => setViewingProfileUid(p.uid)}><div className="flex items-center gap-3"><img src={p.photoURL || ''} className="w-10 h-10 rounded-full bg-gray-800 object-cover" /><div><p className="font-bold text-sm text-white flex items-center gap-1">{p.displayName}{p.uid === roomData?.createdBy && <Crown size={12} className="text-yellow-500" fill="currentColor" />}{roomData?.admins?.includes(p.uid) && <ShieldCheck size={12} className="text-violet-500" />}</p><p className="text-[10px] text-gray-400">{p.seatIndex === 999 ? 'Host' : p.seatIndex >= 0 ? `Seat ${p.seatIndex + 1}` : 'Audience'}</p></div></div>{(isHost || isAdmin) && p.uid !== currentUser.uid && p.uid !== roomData?.createdBy && (<div className="flex gap-2">{p.seatIndex >= 0 && (<button onClick={(e) => { e.stopPropagation(); updateParticipantData(p.uid, { seatIndex: -1 }); }} className="p-2 bg-red-500/10 text-red-500 rounded-lg"><LogOut size={14}/></button>)}<button onClick={(e) => { e.stopPropagation(); setViewingProfileUid(p.uid); }} className="p-2 bg-white/10 text-white rounded-lg"><MoreHorizontal size={14}/></button></div>)}</div>))}</div></div></div>)}
             {showMusicModal && roomData?.musicState?.isEnabled && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex flex-col justify-end animate-fade-in" onClick={() => setShowMusicModal(false)}><div className="bg-[#18181B] rounded-t-[2rem] border-t border-white/10 p-6 shadow-2xl h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}><div className="w-12 h-1.5 bg-white/10 rounded-full mx-auto mb-6"></div><div className="flex bg-black/40 rounded-xl p-1 mb-6"><button onClick={() => setMusicTab('player')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${musicTab === 'player' ? 'bg-violet-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}>Player</button><button onClick={() => setMusicTab('queue')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${musicTab === 'queue' ? 'bg-violet-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}>Queue</button>{(isHost || isAdmin) && <button onClick={() => setMusicTab('search')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${musicTab === 'search' ? 'bg-violet-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}>Search</button>}</div><div className="flex-1 overflow-y-auto">{musicTab === 'player' && (<div className="flex flex-col items-center justify-center h-full pb-10"><div className={`w-48 h-48 rounded-full border-8 border-[#25252D] bg-gradient-to-tr from-violet-600 to-fuchsia-600 flex items-center justify-center shadow-[0_0_50px_rgba(139,92,246,0.3)] mb-8 relative ${musicPlaying ? 'animate-[spin_10s_linear_infinite]' : ''}`}><div className="w-16 h-16 bg-[#18181B] rounded-full border-4 border-[#25252D] z-10"></div><Disc3 size={100} className="absolute text-white/20" /></div><h3 className="text-xl font-bold text-white text-center px-4 line-clamp-1">{roomData.musicState.currentSongName || "No song"}</h3><p className="text-xs text-gray-400 mb-8">Added by {participants.find(p => p.uid === roomData?.musicState?.playedBy)?.displayName || 'Unknown'}</p>{(isHost || isAdmin) && (<div className="flex items-center gap-6"><button onClick={togglePlayPause} className="w-16 h-16 bg-white text-black rounded-full flex items-center justify-center shadow-xl hover:scale-105 transition-transform active:scale-95">{musicPlaying ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" className="ml-1" />}</button><button onClick={playNextSong} className="p-4 bg-white/10 rounded-full text-white hover:bg-white/20 transition-colors"><SkipForward size={24} /></button></div>)}</div>)}{musicTab === 'queue' && (<div className="space-y-2">{(!roomData.musicState.queue || roomData.musicState.queue.length === 0) ? (<p className="text-center text-gray-500 text-xs py-10">Queue empty.</p>) : (roomData.musicState.queue.map((song, i) => (<div key={i} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><div className="flex items-center gap-3 overflow-hidden"><div className="w-8 h-8 rounded bg-violet-500/20 flex items-center justify-center text-violet-400 text-xs font-bold">{i + 1}</div><div className="min-w-0"><p className="text-sm font-bold text-white truncate">{song.name}</p><p className="text-[10px] text-gray-400 truncate">by {song.addedByName}</p></div></div>{(isHost || isAdmin) && (<button onClick={() => removeFromQueue(song)} className="p-2 text-red-400 hover:bg-white/5 rounded-lg"><XIcon size={14}/></button>)}</div>)))}</div>)}{musicTab === 'search' && (<div className="space-y-4"><form onSubmit={searchMusic} className="flex gap-2"><input type="text" value={musicSearchQuery} onChange={(e) => setMusicSearchQuery(e.target.value)} placeholder="Search..." className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none" /><button type="submit" disabled={isSearchingMusic} className="bg-violet-600 px-4 rounded-xl text-white disabled:opacity-50"><Search size={20}/></button></form><div className="flex items-center gap-2"><div className="h-px bg-white/10 flex-1"></div><span className="text-[10px] text-gray-500 uppercase">OR</span><div className="h-px bg-white/10 flex-1"></div></div><button onClick={() => musicInputRef.current?.click()} disabled={isUploadingMusic} className="w-full py-3 bg-white/5 border border-white/10 border-dashed rounded-xl text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors flex items-center justify-center gap-2">{isUploadingMusic ? <Loader2 className="animate-spin" size={16}/> : <Upload size={16}/>} Upload MP3</button><input type="file" ref={musicInputRef} accept="audio/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) uploadAndPlaySong(f); }} /><div className="space-y-2 mt-4">{musicSearchResults.map(track => (<div key={track.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><div className="flex items-center gap-3 overflow-hidden"><img src={track.image} className="w-10 h-10 rounded bg-gray-800 object-cover" /><div className="min-w-0"><p className="text-sm font-bold text-white truncate">{track.name}</p><p className="text-[10px] text-gray-400 truncate">{track.artist_name}</p></div></div><button onClick={() => addTrackToQueue(track)} className="p-2 bg-violet-600 text-white rounded-lg hover:bg-violet-500"><Plus size={16}/></button></div>))}</div></div>)}</div></div></div>)}

@@ -62,6 +62,15 @@ export interface RoomBackground {
   createdAt: number;
 }
 
+export interface GiftItem {
+  id: string;
+  name: string;
+  price: number;
+  iconUrl: string; // Static image for the grid
+  animationUrl?: string; // SVGA/WebP url for full screen animation
+  createdAt: number;
+}
+
 export interface ChatMetadata {
   id: string; // combined uid1_uid2
   participants: string[]; // [uid1, uid2]
