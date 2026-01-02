@@ -105,6 +105,17 @@ const StatCard = ({ label, value, icon: Icon, color }: { label: string, value: s
     </div>
 );
 
+// --- Razorpay Helper ---
+const loadRazorpay = () => {
+    return new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+    });
+};
+
 export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJoinRoom }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(user.displayName || '');
@@ -537,15 +548,85 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
+  // --- RAZORPAY INTEGRATION ---
   const handleRecharge = async () => {
       setIsProcessing(true);
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      try {
-          const userRef = doc(db, 'users', user.uid);
-          await updateDoc(userRef, { walletBalance: increment(rechargeAmount) });
+      
+      // 1. Load Razorpay SDK
+      const res = await loadRazorpay();
+      if (!res) {
+          alert('Razorpay SDK failed to load. Check connection.');
           setIsProcessing(false);
-          setShowRechargeModal(false);
-      } catch (e) { setIsProcessing(false); }
+          return;
+      }
+
+      try {
+          // 2. Call our Vercel API to create Order
+          const response = await fetch('/api/create-order', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ amount: rechargeAmount })
+          });
+          const order = await response.json();
+
+          if (!order.id) {
+             throw new Error("Order creation failed");
+          }
+
+          // 3. Open Razorpay Modal
+          const options = {
+              key: process.env.RAZORPAY_KEY_ID || 'rzp_test_YOUR_KEY_HERE', // Fallback just in case but backend handles order
+              amount: order.amount,
+              currency: order.currency,
+              name: "Heartly Voice",
+              description: "Wallet Recharge",
+              order_id: order.id,
+              handler: async function (response: any) {
+                  // 4. Verify Payment on Backend
+                  const verifyRes = await fetch('/api/verify-payment', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                          razorpay_order_id: response.razorpay_order_id,
+                          razorpay_payment_id: response.razorpay_payment_id,
+                          razorpay_signature: response.razorpay_signature,
+                          userId: user.uid,
+                          amount: rechargeAmount
+                      })
+                  });
+
+                  const verifyData = await verifyRes.json();
+                  if (verifyData.success) {
+                      alert('Payment Successful! Coins added.');
+                      setShowRechargeModal(false);
+                      onUpdate(); // Refresh profile
+                  } else {
+                      alert('Payment verification failed.');
+                  }
+                  setIsProcessing(false);
+              },
+              prefill: {
+                  name: user.displayName || 'User',
+                  email: user.email || 'user@example.com',
+                  contact: '9999999999'
+              },
+              theme: {
+                  color: "#7C3AED" // Violet color matches app
+              }
+          };
+
+          const rzp = new (window as any).Razorpay(options);
+          rzp.on('payment.failed', function (response: any) {
+              alert("Payment Failed: " + response.error.description);
+              setIsProcessing(false);
+          });
+          rzp.open();
+
+      } catch (e) { 
+          console.error(e); 
+          alert("Something went wrong"); 
+          setIsProcessing(false); 
+      }
   };
 
   const handleWithdraw = async () => {
