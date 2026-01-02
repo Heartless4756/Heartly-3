@@ -18,7 +18,9 @@ export default async function handler(req, res) {
     };
 
     const order = await instance.orders.create(options);
-    res.status(200).json(order);
+    
+    // Send the Key ID back to the frontend so it matches the order
+    res.status(200).json({ ...order, key: process.env.RAZORPAY_KEY_ID });
   } catch (error) {
     console.error("Razorpay Order Error:", error);
     res.status(500).json({ error: error.message });

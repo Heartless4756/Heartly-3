@@ -570,12 +570,12 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
           const order = await response.json();
 
           if (!order.id) {
-             throw new Error("Order creation failed");
+             throw new Error(order.error || "Order creation failed");
           }
 
           // 3. Open Razorpay Modal
           const options = {
-              key: process.env.RAZORPAY_KEY_ID || 'rzp_test_YOUR_KEY_HERE', // Fallback just in case but backend handles order
+              key: order.key, // Use the key returned from the backend
               amount: order.amount,
               currency: order.currency,
               name: "Heartly Voice",
@@ -622,9 +622,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
           });
           rzp.open();
 
-      } catch (e) { 
+      } catch (e: any) { 
           console.error(e); 
-          alert("Something went wrong"); 
+          alert("Error: " + (e.message || "Something went wrong")); 
           setIsProcessing(false); 
       }
   };
