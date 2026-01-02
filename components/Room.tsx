@@ -369,51 +369,36 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
 
     // SVGA Player Logic
     useEffect(() => {
-        const playNextAnimation = () => {
-            if (animationQueueRef.current.length === 0 || isPlayingSvgaRef.current || !canvasRef.current) return;
-            
-            const nextUrl = animationQueueRef.current.shift();
-            if (!nextUrl) return;
+        if (!currentSvga) return;
 
-            isPlayingSvgaRef.current = true;
-            setCurrentSvga(nextUrl);
-
-            try {
-                if (!(window as any).SVGA) return;
-                
-                if (!playerRef.current) {
-                    playerRef.current = new (window as any).SVGA.Player('#svga-canvas');
-                }
-                
-                const parser = new (window as any).SVGA.Parser();
-                parser.load(nextUrl, (videoItem: any) => {
-                    playerRef.current.setVideoItem(videoItem);
-                    playerRef.current.startAnimation();
-                    
-                    playerRef.current.onFinished(() => {
-                        playerRef.current.clear();
-                        setCurrentSvga(null);
-                        isPlayingSvgaRef.current = false;
-                        playNextAnimation(); // Check for more
-                    });
-                }, (err: any) => {
-                    console.error("SVGA load error", err);
-                    isPlayingSvgaRef.current = false;
-                    setCurrentSvga(null);
-                    playNextAnimation();
-                });
-
-            } catch (e) {
-                console.error("SVGA Player error", e);
-                isPlayingSvgaRef.current = false;
-                setCurrentSvga(null);
-            }
-        };
-
-        if (animationQueueRef.current.length > 0 && !isPlayingSvgaRef.current) {
-            playNextAnimation();
+        if (!(window as any).SVGA) return;
+        
+        if (!playerRef.current) {
+            playerRef.current = new (window as any).SVGA.Player('#svga-canvas');
         }
-    }, [currentSvga]); // React to state change to re-trigger if needed, though most logic is in function
+        
+        const parser = new (window as any).SVGA.Parser();
+        parser.load(currentSvga, (videoItem: any) => {
+            playerRef.current.setVideoItem(videoItem);
+            playerRef.current.startAnimation();
+            
+            playerRef.current.onFinished(() => {
+                playerRef.current.clear();
+                isPlayingSvgaRef.current = false;
+                // Play next if available
+                const next = animationQueueRef.current.shift();
+                setCurrentSvga(next || null);
+                if(next) isPlayingSvgaRef.current = true;
+            });
+        }, (err: any) => {
+            console.error("SVGA Error", err);
+            isPlayingSvgaRef.current = false;
+            const next = animationQueueRef.current.shift();
+            setCurrentSvga(next || null);
+            if(next) isPlayingSvgaRef.current = true;
+        });
+
+    }, [currentSvga]);
 
     useEffect(() => {
         if (!roomData?.isPaidCall) return;
@@ -546,16 +531,18 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                     
                     // Handle Gift Messages
                     if (data.type === 'gift' && (Date.now() - data.createdAt < 5000)) {
-                        // 1. Show Small icon animation
-                        if (data.giftIcon) {
+                        if (data.giftAnimationUrl) {
+                            // Case A: SVGA Animation exists
+                            if (!isPlayingSvgaRef.current) {
+                                isPlayingSvgaRef.current = true;
+                                setCurrentSvga(data.giftAnimationUrl);
+                            } else {
+                                animationQueueRef.current.push(data.giftAnimationUrl);
+                            }
+                        } else if (data.giftIcon) {
+                            // Case B: No SVGA, fallback to Image Animation
                             setGiftAnimation({ icon: data.giftIcon, name: data.giftName || 'Gift', senderName: data.senderName });
                             setTimeout(() => setGiftAnimation(null), 4000);
-                        }
-                        // 2. Queue SVGA Animation
-                        if (data.giftAnimationUrl) {
-                            animationQueueRef.current.push(data.giftAnimationUrl);
-                            // Trigger queue check
-                            setCurrentSvga((prev) => prev); // Hacky force update to trigger effect
                         }
                     }
                 }
