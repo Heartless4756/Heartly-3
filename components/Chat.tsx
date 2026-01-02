@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { 
@@ -737,7 +736,8 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
                                 uid: otherUser.uid,
                                 displayName: otherUser.displayName,
                                 photoURL: otherUser.photoURL,
-                                email: ''
+                                email: '',
+                                walletBalance: 0
                             });
                             setActiveChatId(chat.id);
                         }}

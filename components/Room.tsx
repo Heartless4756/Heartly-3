@@ -26,7 +26,8 @@ import {
   Share2, Minimize2, Loader2,
   Trash2, RotateCcw, Power, Users,
   Play, Upload, Disc3, Music2, Pause, SkipForward,
-  ShieldAlert, ShieldCheck, VolumeX, UserCheck, Ban, Maximize2, Search, Settings, Smile, CheckCircle2
+  ShieldAlert, ShieldCheck, VolumeX, UserCheck, Ban, Maximize2, Search, Settings, Smile, CheckCircle2,
+  ArrowDownToLine
 } from 'lucide-react';
 
 interface RoomProps {
@@ -143,8 +144,9 @@ const UserProfileModal: React.FC<{
     isViewerAdmin: boolean,
     roomAdmins: string[],
     roomId: string,
-    currentParticipants: Participant[]
-}> = ({ targetUid, currentUser, onClose, isViewerHost, isViewerAdmin, roomAdmins, roomId, currentParticipants }) => {
+    currentParticipants: Participant[],
+    roomCreatorId: string
+}> = ({ targetUid, currentUser, onClose, isViewerHost, isViewerAdmin, roomAdmins, roomId, currentParticipants, roomCreatorId }) => {
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [isFollowing, setIsFollowing] = useState(false);
     const [isBlocked, setIsBlocked] = useState(false);
@@ -220,6 +222,7 @@ const UserProfileModal: React.FC<{
 
     if (loading || !profile) return null;
     const isTargetAdmin = roomAdmins.includes(targetUid);
+    const isTargetHost = targetUid === roomCreatorId;
 
     return (
         <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
@@ -240,12 +243,16 @@ const UserProfileModal: React.FC<{
                     <div className="relative">
                         <img src={profile.photoURL || ''} className="w-24 h-24 rounded-full border-4 border-[#25252D] bg-gray-800 object-cover mb-4" />
                         {isTargetAdmin && (<div className="absolute bottom-4 right-0 bg-violet-600 text-white p-1 rounded-full border-2 border-[#1A1A21]" title="Admin"><ShieldCheck size={14} /></div>)}
+                        {isTargetHost && (<div className="absolute bottom-4 right-0 bg-yellow-500 text-black p-1 rounded-full border-2 border-[#1A1A21]" title="Host"><Crown size={14} /></div>)}
                     </div>
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">{profile.displayName}{isTargetAdmin && <span className="text-[10px] bg-violet-600 px-1.5 py-0.5 rounded text-white font-bold tracking-wide">ADMIN</span>}</h2>
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2">{profile.displayName}
+                        {isTargetAdmin && <span className="text-[10px] bg-violet-600 px-1.5 py-0.5 rounded text-white font-bold tracking-wide">ADMIN</span>}
+                        {isTargetHost && <span className="text-[10px] bg-yellow-500 text-black px-1.5 py-0.5 rounded font-bold tracking-wide">HOST</span>}
+                    </h2>
                     <p className="text-violet-400 text-xs font-mono tracking-wider mb-2">ID: {profile.uniqueId || '....'}</p>
                     <p className="text-gray-400 text-sm text-center mb-6 px-4">{profile.bio || "No bio yet."}</p>
                     <div className="flex gap-8 mb-6 text-center w-full justify-center"><div><span className="block font-bold text-white text-lg">{profile.following?.length || 0}</span><span className="text-[10px] text-gray-500 uppercase font-bold">Following</span></div><div><span className="block font-bold text-white text-lg">{profile.followers?.length || 0}</span><span className="text-[10px] text-gray-500 uppercase font-bold">Followers</span></div></div>
-                    {currentUser.uid !== targetUid && (<div className="w-full space-y-3"><button onClick={toggleFollow} className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${isFollowing ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white hover:opacity-90'}`}>{isFollowing ? <UserCheck size={18} /> : <UserPlus size={18} />}{isFollowing ? 'Following' : 'Follow'}</button>{(isViewerHost || isViewerAdmin) && !isTargetAdmin && (<button onClick={handleKick} className="w-full py-3 rounded-xl font-bold bg-red-500/10 text-red-500 hover:bg-red-500/20 flex items-center justify-center gap-2"><Ban size={18} /> Kick from Room</button>)}</div>)}
+                    {currentUser.uid !== targetUid && (<div className="w-full space-y-3"><button onClick={toggleFollow} className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${isFollowing ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white hover:opacity-90'}`}>{isFollowing ? <UserCheck size={18} /> : <UserPlus size={18} />}{isFollowing ? 'Following' : 'Follow'}</button>{(isViewerHost || isViewerAdmin) && !isTargetAdmin && !isTargetHost && (<button onClick={handleKick} className="w-full py-3 rounded-xl font-bold bg-red-500/10 text-red-500 hover:bg-red-500/20 flex items-center justify-center gap-2"><Ban size={18} /> Kick from Room</button>)}</div>)}
                 </div>
             </div>
         </div>
@@ -416,6 +423,18 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
     useEffect(() => { if (localStreamRef.current && !analysersRef.current[currentUser.uid]) setupAudioAnalyser(currentUser.uid, localStreamRef.current); }, [localStreamRef.current]);
     useEffect(() => { Object.keys(remoteStreams).forEach(uid => { if (!analysersRef.current[uid]) setupAudioAnalyser(uid, remoteStreams[uid]); }); }, [remoteStreams]);
 
+    // Visibility Change Handler to prevent stale removal on mobile
+    useEffect(() => {
+        const handleVisibilityChange = async () => {
+            if (document.visibilityState === 'visible') {
+                // Immediately send heartbeat when user comes back
+                await updateParticipantData(currentUser.uid, { lastSeen: Date.now() });
+            }
+        };
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+    }, [currentUser.uid]);
+
     useEffect(() => {
         musicAudioRef.current = new Audio();
         musicAudioRef.current.crossOrigin = "anonymous";
@@ -489,21 +508,8 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         };
         init();
         heartbeatIntervalRef.current = setInterval(async () => { await updateParticipantData(currentUser.uid, { lastSeen: Date.now() }); }, 30000); 
-        const cleanerInterval = setInterval(async () => {
-            const currentData = await getDoc(doc(db, 'rooms', roomId));
-            if (!currentData.exists()) return;
-            const room = currentData.data() as ExtendedRoomType;
-            if (room.createdBy === currentUser.uid) {
-                const deadUsers = (room.participants || []).filter(p => p.lastSeen && (Date.now() - p.lastSeen > 2 * 60 * 1000) && p.uid !== currentUser.uid);
-                if (deadUsers.length > 0) {
-                    const batch = writeBatch(db);
-                    const roomRef = doc(db, 'rooms', roomId);
-                    batch.update(roomRef, { participants: (room.participants || []).filter(p => !deadUsers.some(d => d.uid === p.uid)) });
-                    await batch.commit();
-                }
-            }
-        }, 60000); 
-        return () => { cleanup(); clearInterval(cleanerInterval); };
+        
+        return () => { cleanup(); };
     }, [roomId]);
     
     useEffect(() => {
@@ -607,7 +613,10 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         const rect = e.currentTarget.getBoundingClientRect();
         if (occupant) { if (isHost || isAdmin || occupant.uid === currentUser.uid) { setPopupInfo({ index, rect }); return; } setViewingProfileUid(occupant.uid); return; }
         const isLocked = roomData?.lockedSeats?.includes(index);
+        
+        // Open menu for Host/Admin on empty seats
         if (isHost || isAdmin) { setPopupInfo({ index, rect }); return; }
+        
         let shouldOpen = !isLocked && index !== 999;
         if (shouldOpen) setPopupInfo({ index, rect });
     };
@@ -686,13 +695,49 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         const index = popupInfo.index;
         const occupant = participants.find(p => p.seatIndex === index);
         const isLocked = roomData?.lockedSeats?.includes(index);
+        
+        // 1. Occupied Seat Logic
         if (occupant) {
+             // User clicking on themselves
              if (occupant.uid === currentUser.uid) return (<div className="bg-[#2A2A35] border border-white/10 rounded-xl shadow-2xl p-2 flex flex-col gap-1 w-48 text-white animate-fade-in"><button onClick={() => { setViewingProfileUid(occupant.uid); setPopupInfo(null); }} className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-xs font-medium rounded-lg text-left"><Eye size={14} className="text-violet-400" /> View Profile</button><button onClick={() => { updateParticipantData(occupant.uid, { seatIndex: -1 }); setPopupInfo(null); }} className="flex items-center gap-2 px-3 py-2 hover:bg-red-500/10 text-xs font-medium text-red-400 rounded-lg text-left"><LogOut size={14} /> Leave Seat</button></div>);
-             if ((isHost || (isAdmin && occupant.uid !== roomData?.createdBy)) && occupant.uid !== currentUser.uid) return (<div className="bg-[#2A2A35] border border-white/10 rounded-xl shadow-2xl p-2 flex flex-col gap-1 w-48 text-white"><button onClick={() => { setViewingProfileUid(occupant.uid); setPopupInfo(null); }} className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-xs font-medium rounded-lg text-left"><Eye size={14} className="text-violet-400" /> View Profile</button><button onClick={() => handleMutePeer(occupant.uid, occupant.isMuted, !!occupant.isHostMuted)} className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-xs font-medium rounded-lg text-left">{occupant.isHostMuted ? <Mic size={14} className="text-emerald-400" /> : <MicOff size={14} className="text-red-400" />} {occupant.isHostMuted ? 'Unlock Mic' : 'Mute Mic (Lock)'}</button><button onClick={() => { updateParticipantData(occupant.uid, { seatIndex: -1 }); setPopupInfo(null); }} className="flex items-center gap-2 px-3 py-2 hover:bg-red-500/10 text-xs font-medium text-red-400 rounded-lg text-left"><LogOut size={14} /> Move to Audience</button></div>);
+             
+             // Admin/Host managing others (Ensure Host is protected)
+             const isTargetHost = occupant.uid === roomData?.createdBy;
+             
+             if ((isHost || (isAdmin && !isTargetHost)) && occupant.uid !== currentUser.uid) {
+                 return (
+                    <div className="bg-[#2A2A35] border border-white/10 rounded-xl shadow-2xl p-2 flex flex-col gap-1 w-48 text-white">
+                        <button onClick={() => { setViewingProfileUid(occupant.uid); setPopupInfo(null); }} className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-xs font-medium rounded-lg text-left"><Eye size={14} className="text-violet-400" /> View Profile</button>
+                        <button onClick={() => handleMutePeer(occupant.uid, occupant.isMuted, !!occupant.isHostMuted)} className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-xs font-medium rounded-lg text-left">{occupant.isHostMuted ? <Mic size={14} className="text-emerald-400" /> : <MicOff size={14} className="text-red-400" />} {occupant.isHostMuted ? 'Unlock Mic' : 'Mute Mic (Lock)'}</button>
+                        <button onClick={() => { updateParticipantData(occupant.uid, { seatIndex: -1 }); setPopupInfo(null); }} className="flex items-center gap-2 px-3 py-2 hover:bg-red-500/10 text-xs font-medium text-red-400 rounded-lg text-left"><LogOut size={14} /> Move to Audience</button>
+                    </div>
+                 );
+             }
              return <button onClick={() => { setViewingProfileUid(occupant.uid); setPopupInfo(null); }} className="bg-[#2A2A35] text-white px-4 py-2 rounded-xl text-xs font-bold border border-white/10 hover:bg-white/5 transition-colors">View Profile</button>;
         }
-        if (!occupant && (isHost || isAdmin)) { return (<div className="flex flex-col gap-1 bg-[#25252D] p-2 rounded-xl border border-white/10 shadow-xl w-32 animate-fade-in"><button onClick={() => handleTakeSeat(index)} className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-xs font-bold text-white rounded-lg text-left transition-colors"><RotateCcw size={14} className="text-blue-400"/> Switch Seat</button><button onClick={() => handleInviteToSeat(index)} className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-xs font-bold text-white rounded-lg text-left transition-colors"><UserPlus size={14} className="text-emerald-400"/> Invite User</button><button onClick={() => toggleSeatLock(index)} className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-xs font-bold text-white rounded-lg text-left transition-colors">{isLocked ? <Unlock size={14} className="text-green-400" /> : <Lock size={14} className="text-red-400" />}{isLocked ? 'Unlock' : 'Lock Seat'}</button></div>); }
+
+        // 2. Empty Seat Logic (Host/Admin)
+        if (!occupant && (isHost || isAdmin)) { 
+            const myCurrentSeat = participants.find(p => p.uid === currentUser.uid)?.seatIndex;
+            const isOnAnySeat = myCurrentSeat !== undefined && myCurrentSeat >= 0;
+
+            return (
+                <div className="flex flex-col gap-1 bg-[#25252D] p-2 rounded-xl border border-white/10 shadow-xl w-32 animate-fade-in">
+                    {/* Take Seat option if not on seat, Switch if on seat */}
+                    <button onClick={() => handleTakeSeat(index)} className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-xs font-bold text-white rounded-lg text-left transition-colors">
+                        {isOnAnySeat ? <RotateCcw size={14} className="text-blue-400"/> : <ArrowDownToLine size={14} className="text-blue-400"/>} 
+                        {isOnAnySeat ? 'Switch Seat' : 'Take Seat'}
+                    </button>
+                    <button onClick={() => handleInviteToSeat(index)} className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-xs font-bold text-white rounded-lg text-left transition-colors"><UserPlus size={14} className="text-emerald-400"/> Invite User</button>
+                    <button onClick={() => toggleSeatLock(index)} className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-xs font-bold text-white rounded-lg text-left transition-colors">{isLocked ? <Unlock size={14} className="text-green-400" /> : <Lock size={14} className="text-red-400" />}{isLocked ? 'Unlock' : 'Lock Seat'}</button>
+                </div>
+            ); 
+        }
+
+        // 3. Host Seat Specific
         if (index === 999) return isHost ? (<button onClick={() => handleTakeSeat(999)} className="bg-gradient-to-r from-yellow-500 to-amber-600 text-black text-xs font-bold px-4 py-2 rounded-xl shadow-xl flex items-center justify-center gap-2 whitespace-nowrap active:scale-95"><Crown size={14} /> Take Host Seat</button>) : <div className="bg-[#2A2A35] text-gray-400 px-3 py-2 rounded-xl text-xs font-bold border border-white/10">Host Only</div>;
+        
+        // 4. Regular User Empty Seat
         const myP = participants.find(p => p.uid === currentUser.uid);
         if (myP?.seatIndex === undefined || myP.seatIndex < 0) return (<button onClick={() => handleTakeSeat(index)} className="bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-lg flex items-center justify-center gap-2 active:scale-95">Take Seat</button>);
         return <div className="bg-[#2A2A35] text-gray-400 px-3 py-2 rounded-xl text-xs font-bold border border-white/10">Already Seated</div>;
@@ -836,7 +881,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
             {showMusicModal && roomData?.musicState?.isEnabled && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex flex-col justify-end animate-fade-in" onClick={() => setShowMusicModal(false)}><div className="bg-[#18181B] rounded-t-[2rem] border-t border-white/10 p-6 shadow-2xl h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}><div className="w-12 h-1.5 bg-white/10 rounded-full mx-auto mb-6"></div><div className="flex bg-black/40 rounded-xl p-1 mb-6"><button onClick={() => setMusicTab('player')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${musicTab === 'player' ? 'bg-violet-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}>Player</button><button onClick={() => setMusicTab('queue')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${musicTab === 'queue' ? 'bg-violet-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}>Queue</button>{(isHost || isAdmin) && <button onClick={() => setMusicTab('search')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${musicTab === 'search' ? 'bg-violet-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}>Search</button>}</div><div className="flex-1 overflow-y-auto">{musicTab === 'player' && (<div className="flex flex-col items-center justify-center h-full pb-10"><div className={`w-48 h-48 rounded-full border-8 border-[#25252D] bg-gradient-to-tr from-violet-600 to-fuchsia-600 flex items-center justify-center shadow-[0_0_50px_rgba(139,92,246,0.3)] mb-8 relative ${musicPlaying ? 'animate-[spin_10s_linear_infinite]' : ''}`}><div className="w-16 h-16 bg-[#18181B] rounded-full border-4 border-[#25252D] z-10"></div><Disc3 size={100} className="absolute text-white/20" /></div><h3 className="text-xl font-bold text-white text-center px-4 line-clamp-1">{roomData.musicState.currentSongName || "No song"}</h3><p className="text-xs text-gray-400 mb-8">Added by {participants.find(p => p.uid === roomData?.musicState?.playedBy)?.displayName || 'Unknown'}</p>{(isHost || isAdmin) && (<div className="flex items-center gap-6"><button onClick={togglePlayPause} className="w-16 h-16 bg-white text-black rounded-full flex items-center justify-center shadow-xl hover:scale-105 transition-transform active:scale-95">{musicPlaying ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" className="ml-1" />}</button><button onClick={playNextSong} className="p-4 bg-white/10 rounded-full text-white hover:bg-white/20 transition-colors"><SkipForward size={24} /></button></div>)}</div>)}{musicTab === 'queue' && (<div className="space-y-2">{(!roomData.musicState.queue || roomData.musicState.queue.length === 0) ? (<p className="text-center text-gray-500 text-xs py-10">Queue empty.</p>) : (roomData.musicState.queue.map((song, i) => (<div key={i} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><div className="flex items-center gap-3 overflow-hidden"><div className="w-8 h-8 rounded bg-violet-500/20 flex items-center justify-center text-violet-400 text-xs font-bold">{i + 1}</div><div className="min-w-0"><p className="text-sm font-bold text-white truncate">{song.name}</p><p className="text-[10px] text-gray-400 truncate">by {song.addedByName}</p></div></div>{(isHost || isAdmin) && (<button onClick={() => removeFromQueue(song)} className="p-2 text-red-400 hover:bg-white/5 rounded-lg"><XIcon size={14}/></button>)}</div>)))}</div>)}{musicTab === 'search' && (<div className="space-y-4"><form onSubmit={searchMusic} className="flex gap-2"><input type="text" value={musicSearchQuery} onChange={(e) => setMusicSearchQuery(e.target.value)} placeholder="Search..." className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none" /><button type="submit" disabled={isSearchingMusic} className="bg-violet-600 px-4 rounded-xl text-white disabled:opacity-50"><Search size={20}/></button></form><div className="flex items-center gap-2"><div className="h-px bg-white/10 flex-1"></div><span className="text-[10px] text-gray-500 uppercase">OR</span><div className="h-px bg-white/10 flex-1"></div></div><button onClick={() => musicInputRef.current?.click()} disabled={isUploadingMusic} className="w-full py-3 bg-white/5 border border-white/10 border-dashed rounded-xl text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors flex items-center justify-center gap-2">{isUploadingMusic ? <Loader2 className="animate-spin" size={16}/> : <Upload size={16}/>} Upload MP3</button><input type="file" ref={musicInputRef} accept="audio/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) uploadAndPlaySong(f); }} /><div className="space-y-2 mt-4">{musicSearchResults.map(track => (<div key={track.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><div className="flex items-center gap-3 overflow-hidden"><img src={track.image} className="w-10 h-10 rounded bg-gray-800 object-cover" /><div className="min-w-0"><p className="text-sm font-bold text-white truncate">{track.name}</p><p className="text-[10px] text-gray-400 truncate">{track.artist_name}</p></div></div><button onClick={() => addTrackToQueue(track)} className="p-2 bg-violet-600 text-white rounded-lg hover:bg-violet-500"><Plus size={16}/></button></div>))}</div></div>)}</div></div></div>)}
             {popupInfo && (<div className="fixed inset-0 z-[100] bg-transparent" onClick={() => setPopupInfo(null)}><div className="absolute z-[100]" style={{ top: popupInfo.rect.bottom + 8, left: popupInfo.rect.left + (popupInfo.rect.width / 2), transform: 'translateX(-50%)' }} onClick={(e) => e.stopPropagation()}>{renderPopupContent()}</div></div>)}
             {showInviteList && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowInviteList(false)}><div className="bg-[#18181B] w-full max-w-sm rounded-[2rem] border border-white/10 p-6 shadow-2xl" onClick={e => e.stopPropagation()}><h3 className="text-lg font-bold text-white mb-4">Invite to Seat</h3><div className="space-y-2 max-h-[50vh] overflow-y-auto">{participants.filter(p => p.seatIndex < 0 && p.uid !== currentUser.uid).length === 0 ? (<p className="text-center text-gray-500 text-xs py-4">No users in audience.</p>) : (participants.filter(p => p.seatIndex < 0 && p.uid !== currentUser.uid).map(p => (<button key={p.uid} onClick={() => sendInvite(p.uid)} className="w-full flex items-center justify-between p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"><div className="flex items-center gap-3"><img src={p.photoURL || ''} className="w-10 h-10 rounded-full bg-gray-800 object-cover" /><span className="font-bold text-sm text-white">{p.displayName}</span></div><div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg"><Plus size={16}/></div></button>)))}</div></div></div>)}
-            {viewingProfileUid && currentUser && (<UserProfileModal targetUid={viewingProfileUid} currentUser={currentUser} onClose={() => setViewingProfileUid(null)} isViewerHost={isHost} isViewerAdmin={isAdmin} roomAdmins={roomData?.admins || []} roomId={roomId} currentParticipants={participants} />)}
+            {viewingProfileUid && currentUser && (<UserProfileModal targetUid={viewingProfileUid} currentUser={currentUser} onClose={() => setViewingProfileUid(null)} isViewerHost={isHost} isViewerAdmin={isAdmin} roomAdmins={roomData?.admins || []} roomId={roomId} currentParticipants={participants} roomCreatorId={roomData?.createdBy || ''} />)}
             {incomingInvite && (<div className="absolute top-20 left-4 right-4 z-50 bg-[#1A1A21] border border-violet-500/50 p-4 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-top-4"><div className="flex items-center gap-3 mb-3"><div className="w-10 h-10 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400"><Crown size={20} /></div><div><p className="font-bold text-white text-sm">Seat Invitation</p><p className="text-xs text-gray-400">{incomingInvite.fromName} invited you to Seat {incomingInvite.seatIndex + 1}</p></div></div><div className="flex gap-3"><button onClick={acceptInvite} className="flex-1 bg-violet-600 hover:bg-violet-500 text-white py-2 rounded-xl text-xs font-bold">Accept</button><button onClick={declineInvite} className="flex-1 bg-white/5 hover:bg-white/10 text-gray-400 py-2 rounded-xl text-xs font-bold">Decline</button></div></div>)}
             <div className="hidden">{Object.entries(remoteStreams).map(([uid, stream]) => { const p = participants.find(part => part.uid === uid); const shouldMute = p ? (p.isMuted || p.isHostMuted || !isSpeakerOn) : true; return <RemoteAudio key={uid} stream={stream} muted={shouldMute} />; })}</div>
         </div>
