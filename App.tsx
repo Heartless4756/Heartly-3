@@ -1,7 +1,7 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { auth, db, messaging } from './firebase';
-import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import type { User } from 'firebase/auth';
 import { doc, getDoc, setDoc, collection, query, where, onSnapshot, updateDoc, writeBatch, getDocs } from 'firebase/firestore';
 import { getToken, onMessage } from 'firebase/messaging';
 import { Auth } from './components/Auth';
@@ -20,7 +20,7 @@ const CACHE_KEY_PROFILE = 'heartly_cached_profile';
 
 const App: React.FC = () => {
   // 1. Initialize State from Local Storage (INSTANT LOAD)
-  const [user, setUser] = useState<User | any>(() => {
+  const [user, setUser] = useState<User | null>(() => {
       const cached = localStorage.getItem(CACHE_KEY_AUTH);
       return cached ? JSON.parse(cached) : null;
   });

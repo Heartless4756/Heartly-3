@@ -292,8 +292,8 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
     const [currentSvga, setCurrentSvga] = useState<string | null>(null);
     const animationQueueRef = useRef<string[]>([]);
     const isPlayingSvgaRef = useRef(false);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
     const playerRef = useRef<any>(null); // SVGA Player instance
+    const svgaTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const musicAudioRef = useRef<HTMLAudioElement | null>(null);
     const musicInputRef = useRef<HTMLInputElement>(null);
@@ -367,37 +367,88 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         }
     }, [roomData, showSettingsModal]);
 
-    // SVGA Player Logic
+    // SVGA Player Logic with Loop Control & Timeout
     useEffect(() => {
-        if (!currentSvga) return;
+        if (!currentSvga) {
+            if (playerRef.current) {
+                playerRef.current.clear();
+            }
+            return;
+        }
 
-        if (!(window as any).SVGA) return;
-        
-        if (!playerRef.current) {
-            playerRef.current = new (window as any).SVGA.Player('#svga-canvas');
+        if (!(window as any).SVGA) {
+            console.warn("SVGA Library not loaded");
+            setCurrentSvga(null);
+            isPlayingSvgaRef.current = false;
+            return;
         }
         
-        const parser = new (window as any).SVGA.Parser();
-        parser.load(currentSvga, (videoItem: any) => {
-            playerRef.current.setVideoItem(videoItem);
-            playerRef.current.startAnimation();
+        try {
+            if (!playerRef.current) {
+                playerRef.current = new (window as any).SVGA.Player('#svga-canvas');
+                playerRef.current.loops = 1; // Play only once
+                playerRef.current.clearsAfterStop = true; // Clear canvas after stop
+                playerRef.current.fillMode = 'Clear'; // Ensure transparent after finish
+            }
             
-            playerRef.current.onFinished(() => {
-                playerRef.current.clear();
+            const parser = new (window as any).SVGA.Parser();
+            
+            // Safety timeout: If animation gets stuck or hangs, force clear after 7s
+            if (svgaTimeoutRef.current) clearTimeout(svgaTimeoutRef.current);
+            svgaTimeoutRef.current = setTimeout(() => {
+                console.log("SVGA Timeout: Force clearing");
+                if (playerRef.current) {
+                    playerRef.current.stopAnimation();
+                    playerRef.current.clear();
+                }
                 isPlayingSvgaRef.current = false;
-                // Play next if available
-                const next = animationQueueRef.current.shift();
-                setCurrentSvga(next || null);
-                if(next) isPlayingSvgaRef.current = true;
-            });
-        }, (err: any) => {
-            console.error("SVGA Error", err);
-            isPlayingSvgaRef.current = false;
-            const next = animationQueueRef.current.shift();
-            setCurrentSvga(next || null);
-            if(next) isPlayingSvgaRef.current = true;
-        });
+                setCurrentSvga(null);
+            }, 7000);
 
+            parser.load(currentSvga, (videoItem: any) => {
+                if (!playerRef.current) return;
+                
+                playerRef.current.setVideoItem(videoItem);
+                playerRef.current.startAnimation();
+                
+                playerRef.current.onFinished(() => {
+                    if (svgaTimeoutRef.current) clearTimeout(svgaTimeoutRef.current);
+                    
+                    playerRef.current.clear();
+                    isPlayingSvgaRef.current = false;
+                    
+                    // Play next if available
+                    const next = animationQueueRef.current.shift();
+                    if (next) {
+                        isPlayingSvgaRef.current = true;
+                        setCurrentSvga(next);
+                    } else {
+                        setCurrentSvga(null);
+                    }
+                });
+            }, (err: any) => {
+                console.error("SVGA Load Error", err);
+                if (svgaTimeoutRef.current) clearTimeout(svgaTimeoutRef.current);
+                
+                isPlayingSvgaRef.current = false;
+                // Try next
+                const next = animationQueueRef.current.shift();
+                if (next) {
+                    isPlayingSvgaRef.current = true;
+                    setCurrentSvga(next);
+                } else {
+                    setCurrentSvga(null);
+                }
+            });
+        } catch (e) {
+            console.error("SVGA Init Error", e);
+            setCurrentSvga(null);
+            isPlayingSvgaRef.current = false;
+        }
+
+        return () => {
+            if (svgaTimeoutRef.current) clearTimeout(svgaTimeoutRef.current);
+        };
     }, [currentSvga]);
 
     useEffect(() => {
@@ -530,9 +581,9 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                     const data = change.doc.data() as Message;
                     
                     // Handle Gift Messages
-                    if (data.type === 'gift' && (Date.now() - data.createdAt < 5000)) {
-                        if (data.giftAnimationUrl) {
-                            // Case A: SVGA Animation exists
+                    if (data.type === 'gift' && (Date.now() - data.createdAt < 8000)) {
+                        if (data.giftAnimationUrl && data.giftAnimationUrl.trim() !== '') {
+                            // Case A: SVGA Animation exists AND is not empty
                             if (!isPlayingSvgaRef.current) {
                                 isPlayingSvgaRef.current = true;
                                 setCurrentSvga(data.giftAnimationUrl);
@@ -834,8 +885,8 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                 className="absolute inset-0 w-full h-full object-cover opacity-60 z-0 pointer-events-none" 
             />
             
-            {/* SVGA Player Overlay (Full Screen, High Z-Index) */}
-            <div className={`absolute inset-0 z-50 pointer-events-none flex items-center justify-center ${currentSvga ? 'block' : 'hidden'}`}>
+            {/* SVGA Player Overlay (Full Screen, High Z-Index, Transparent Background) */}
+            <div className={`absolute inset-0 z-50 pointer-events-none flex items-center justify-center bg-transparent ${currentSvga ? 'block' : 'hidden'}`}>
                 <div id="svga-canvas" className="w-full h-full max-w-[500px] max-h-[500px] object-contain"></div>
             </div>
 

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { UserProfile, Room, Report, Sticker, RoomBackground, GiftItem } from '../types';
 import { updateProfile } from 'firebase/auth';
