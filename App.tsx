@@ -341,7 +341,7 @@ const App: React.FC = () => {
             const roomData = roomSnap.data() as Room;
             const updatedParticipants = roomData.participants.map(p => {
                 if (p.uid === user.uid) {
-                    return { ...p, photoURL: latestData.photoURL, displayName: latestData.displayName || p.displayName };
+                    return { ...p, photoURL: latestData.photoURL, displayName: latestData.displayName || p.displayName, frameUrl: latestData.frameUrl };
                 }
                 return p;
             });

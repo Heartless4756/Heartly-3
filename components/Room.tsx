@@ -226,6 +226,7 @@ const UserProfileModal: React.FC<{
                 <div className="flex flex-col items-center">
                     <div className="relative mb-4 w-24 h-24">
                         <img src={profile.photoURL || ''} className="w-full h-full rounded-full border-4 border-[#25252D] bg-gray-800 object-cover" />
+                        {profile.frameUrl && <img src={profile.frameUrl} className="absolute -inset-3 w-[130%] h-[130%] object-contain pointer-events-none" />}
                         {isTargetAdmin && (<div className="absolute bottom-0 right-0 bg-violet-600 text-white p-1 rounded-full border-2 border-[#1A1A21]" title="Admin"><ShieldCheck size={14} /></div>)}
                         {isTargetHost && (<div className="absolute bottom-0 right-0 bg-yellow-500 text-black p-1 rounded-full border-2 border-[#1A1A21]" title="Host"><Crown size={14} /></div>)}
                     </div>
@@ -543,7 +544,17 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
               const myPart = currentParts.find(p => p.uid === currentUser.uid);
               if (!myPart) {
                  const isCreator = data.createdBy === currentUser.uid;
-                 const participant: Participant = { uid: currentUser.uid, displayName: currentUser.displayName || 'Guest', photoURL: currentUser.photoURL, isMuted: true, isHostMuted: false, seatIndex: isCreator ? 999 : -1, joinedAt: Date.now(), lastSeen: Date.now() };
+                 const participant: Participant = { 
+                     uid: currentUser.uid, 
+                     displayName: currentUser.displayName || 'Guest', 
+                     photoURL: currentUser.photoURL, 
+                     isMuted: true, 
+                     isHostMuted: false, 
+                     seatIndex: isCreator ? 999 : -1, 
+                     joinedAt: Date.now(), 
+                     lastSeen: Date.now(),
+                     frameUrl: currentUser.frameUrl || null 
+                 };
                   await updateDoc(roomRef, { participants: arrayUnion(participant) });
               } else {
                  const isOnSeat = myPart.seatIndex >= 0 || myPart.seatIndex === 999;
@@ -867,6 +878,10 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                         <Plus size={16} className="text-white/20" />
                     )}
                 </div>
+                {/* Avatar Frame for Grid Seats */}
+                {seat.occupant && seat.occupant.frameUrl && (
+                    <img src={seat.occupant.frameUrl} className="absolute -inset-3 w-[145%] h-[145%] object-contain pointer-events-none z-30" />
+                )}
                 {seat.occupant && seat.occupant.reaction && seat.occupant.reaction.expiresAt > Date.now() && (
                     <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
                         <img src={seat.occupant.reaction.url} className="w-24 h-24 drop-shadow-[0_8px_16px_rgba(0,0,0,0.8)] filter brightness-110 object-contain" />
@@ -931,6 +946,10 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                                     <Plus size={24} className="text-yellow-500/50" />
                                 )}
                             </div>
+                            {/* Avatar Frame for Host Seat */}
+                            {hostSeatOccupant && hostSeatOccupant.frameUrl && (
+                                <img src={hostSeatOccupant.frameUrl} className="absolute -inset-4 w-[140%] h-[140%] object-contain pointer-events-none z-30" />
+                            )}
                             {hostSeatOccupant && hostSeatOccupant.reaction && hostSeatOccupant.reaction.expiresAt > Date.now() && (
                                 <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
                                     <img src={hostSeatOccupant.reaction.url} className="w-32 h-32 drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)] filter brightness-110 object-contain" />
