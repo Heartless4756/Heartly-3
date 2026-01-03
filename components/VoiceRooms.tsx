@@ -84,16 +84,6 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
       }
   };
 
-  const handleQuickJoin = () => {
-    const activeUnlockedRooms = rooms.filter(r => r.active && !r.password);
-    if (activeUnlockedRooms.length === 0) {
-      alert("No active open rooms available.");
-      return;
-    }
-    const randomRoom = activeUnlockedRooms[Math.floor(Math.random() * activeUnlockedRooms.length)];
-    onJoinRoom(randomRoom.id);
-  };
-
   const getTopicIcon = (topic: string) => {
     switch (topic.toLowerCase()) {
       case 'gaming': return <Gamepad2 size={12} />;
