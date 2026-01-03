@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { UserProfile, Room, Report, Sticker, RoomBackground, GiftItem, Frame } from '../types';
+import { UserProfile, Room, Report, Sticker, RoomBackground, GiftItem } from '../types';
 import { updateProfile } from 'firebase/auth';
 import { doc, updateDoc, increment, getDoc, arrayRemove, arrayUnion, collection, query, where, getDocs, deleteDoc, orderBy, addDoc, setDoc, limit, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -47,8 +47,7 @@ import {
   Smile,
   Image as ImageIcon,
   Gift,
-  ShoppingBag,
-  Frame as FrameIcon
+  ShoppingBag
 } from 'lucide-react';
 
 interface ProfileProps {
@@ -60,7 +59,7 @@ interface ProfileProps {
 
 const ADMIN_EMAIL = "sv116774@gmail.com";
 
-type AdminTab = 'dashboard' | 'frames' | 'users' | 'rooms' | 'listeners' | 'reports' | 'stickers' | 'backgrounds' | 'gifts';
+type AdminTab = 'dashboard' | 'users' | 'rooms' | 'listeners' | 'reports' | 'stickers' | 'backgrounds' | 'gifts';
 
 interface SettingsItemProps {
   onClick: () => void;
@@ -146,9 +145,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   const [blockedProfiles, setBlockedProfiles] = useState<UserProfile[]>([]);
   const [loadingBlocked, setLoadingBlocked] = useState(false);
 
-  // Bag / Inventory State
-  const [showBagModal, setShowBagModal] = useState(false);
-
   // Social Lists State
   const [showUserList, setShowUserList] = useState<'followers' | 'following' | null>(null);
   const [userList, setUserList] = useState<UserProfile[]>([]);
@@ -181,10 +177,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   // Admin: Reports
   const [adminReports, setAdminReports] = useState<Report[]>([]);
 
-  // Admin: Stickers, Gifts, Frames
+  // Admin: Stickers, Gifts
   const [adminStickers, setAdminStickers] = useState<Sticker[]>([]);
   const [adminGifts, setAdminGifts] = useState<GiftItem[]>([]);
-  const [adminFrames, setAdminFrames] = useState<Frame[]>([]);
   const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
   
   // Gift Form
@@ -198,7 +193,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   const stickerInputRef = useRef<HTMLInputElement>(null);
   const giftIconInputRef = useRef<HTMLInputElement>(null);
   const giftAnimInputRef = useRef<HTMLInputElement>(null);
-  const frameInputRef = useRef<HTMLInputElement>(null);
 
   // Admin: Backgrounds
   const [adminBackgrounds, setAdminBackgrounds] = useState<RoomBackground[]>([]);
@@ -307,19 +301,13 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       const giftsData = giftsSnap.docs.map(d => ({ ...d.data(), id: d.id } as GiftItem));
       setAdminGifts(giftsData);
 
-      // 8. Frames
-      const framesQuery = query(collection(db, 'frames'), orderBy('createdAt', 'desc'));
-      const framesSnap = await getDocs(framesQuery);
-      const framesData = framesSnap.docs.map(d => ({ ...d.data(), id: d.id } as Frame));
-      setAdminFrames(framesData);
-
-      // 9. Backgrounds
+      // 8. Backgrounds
       const bgQuery = query(collection(db, 'roomBackgrounds'), orderBy('createdAt', 'desc'));
       const bgSnap = await getDocs(bgQuery);
       const bgData = bgSnap.docs.map(d => ({ ...d.data(), id: d.id } as RoomBackground));
       setAdminBackgrounds(bgData);
 
-      // 10. System Config
+      // 9. System Config
       const sysDoc = await getDoc(doc(db, 'system', 'general'));
       if (sysDoc.exists()) {
           setMaintenanceMode(sysDoc.data().maintenanceMode || false);
@@ -349,35 +337,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       const response = await fetch(`https://api.cloudinary.com/v1_1/dtxvdtt78/${resourceType}/upload`, { method: 'POST', body: formData });
       const data = await response.json();
       return data.secure_url;
-  };
-
-  const handleFrameUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      
-      const frameName = prompt("Enter Frame Name:");
-      if (!frameName) return;
-
-      setLoading(true);
-      try {
-          const url = await uploadFileToCloudinary(file);
-          await addDoc(collection(db, 'frames'), {
-              url: url,
-              name: frameName,
-              createdAt: Date.now()
-          });
-          alert("Frame uploaded!");
-          fetchAdminStats(); // Refresh list immediately
-      } catch(e) { console.error(e); alert("Failed to upload frame"); } finally { setLoading(false); }
-  };
-
-  const handleDeleteFrame = async (e: React.MouseEvent, frameId: string) => {
-      e.stopPropagation();
-      if(!window.confirm("Permanently delete this frame?")) return;
-      try {
-          await deleteDoc(doc(db, 'frames', frameId));
-          setAdminFrames(prev => prev.filter(f => f.id !== frameId));
-      } catch(e) { console.error(e); }
   };
 
   const handleStickerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -651,58 +610,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
         setFetchedAdminUser(prev => prev ? { ...prev, photoURL: url } : null);
         alert("Profile picture updated.");
     } catch (error) { console.error(error); } finally { setLoading(false); }
-  };
-
-  const handleAdminGiveFrame = async (frame: Frame) => {
-      if (!fetchedAdminUser) return;
-      if (!window.confirm(`Give frame "${frame.name}" to ${fetchedAdminUser.displayName}?`)) return;
-      
-      setLoading(true);
-      try {
-          const userRef = doc(db, 'users', fetchedAdminUser.uid);
-          // Add entire frame object to ownedFrames array
-          await updateDoc(userRef, {
-              ownedFrames: arrayUnion(frame)
-          });
-          alert(`Frame sent to ${fetchedAdminUser.displayName}'s bag!`);
-      } catch (e) {
-          console.error("Error giving frame", e);
-          alert("Failed to give frame.");
-      } finally {
-          setLoading(false);
-      }
-  };
-
-  const handleEquipFrame = async (frame: Frame) => {
-      setLoading(true);
-      try {
-          const userRef = doc(db, 'users', user.uid);
-          await updateDoc(userRef, {
-              frameUrl: frame.url
-          });
-          // Update local state immediately for better UX
-          user.frameUrl = frame.url;
-          onUpdate();
-          setShowBagModal(false);
-          alert("Frame applied!");
-      } catch (e) {
-          console.error("Error equipping frame", e);
-      } finally {
-          setLoading(false);
-      }
-  };
-
-  const handleRemoveFrame = async () => {
-      setLoading(true);
-      try {
-          const userRef = doc(db, 'users', user.uid);
-          await updateDoc(userRef, {
-              frameUrl: null
-          });
-          user.frameUrl = undefined;
-          onUpdate();
-          setShowBagModal(false);
-      } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   // --- RAZORPAY INTEGRATION ---
@@ -1158,38 +1065,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       </div>
   );
 
-  // --- ADDED RENDER FUNCTION FOR FRAMES ---
-  const renderAdminFrames = () => (
-      <div className="h-full flex flex-col animate-fade-in">
-          <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-white">Avatar Frames</h2>
-              <div className="flex gap-2">
-                  <input type="file" ref={frameInputRef} className="hidden" accept="image/*" onChange={handleFrameUpload} />
-                  <button onClick={() => frameInputRef.current?.click()} disabled={loading} className="px-4 py-2 bg-white text-black rounded-xl hover:bg-gray-200 text-xs font-bold flex items-center gap-2">
-                      {loading ? <Loader2 size={16} className="animate-spin"/> : <Plus size={16}/>} Upload Frame
-                  </button>
-              </div>
-          </div>
-
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-4 overflow-y-auto pb-4">
-              {adminFrames.map(frame => (
-                  <div key={frame.id} className="relative group bg-[#1A1A21] rounded-xl p-4 border border-white/5 flex flex-col items-center">
-                      <div className="relative w-16 h-16 mb-2">
-                          <div className="w-full h-full rounded-full bg-gray-800 border-2 border-white/10"></div>
-                          {/* Frame Overlay - Fixed Scale to ensure perfect fit */}
-                          <img src={frame.url} className="absolute inset-0 w-full h-full scale-[1.35] object-contain pointer-events-none" />
-                      </div>
-                      <p className="text-xs font-bold text-white text-center truncate w-full">{frame.name}</p>
-                      <button onClick={(e) => handleDeleteFrame(e, frame.id)} className="absolute top-2 right-2 p-1.5 bg-red-500/20 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors">
-                          <Trash2 size={12}/>
-                      </button>
-                  </div>
-              ))}
-              {adminFrames.length === 0 && <p className="text-gray-500 col-span-full text-center py-10">No frames uploaded.</p>}
-          </div>
-      </div>
-  );
-
   const renderAdminBackgrounds = () => (
       <div className="h-full flex flex-col animate-fade-in">
           <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
@@ -1235,7 +1110,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                            <div className="relative group w-24 h-24">
                                 <div className="relative w-full h-full">
                                     <img src={fetchedAdminUser.photoURL || ''} className="w-full h-full rounded-2xl bg-gray-800 object-cover border-4 border-[#25252D] shadow-2xl" />
-                                    {fetchedAdminUser.frameUrl && <img src={fetchedAdminUser.frameUrl} className="absolute inset-0 w-full h-full scale-[1.35] object-contain z-10 pointer-events-none" />}
                                 </div>
                                 <input type="file" ref={adminFileInputRef} className="hidden" onChange={handleAdminImageUpload} accept="image/*" />
                                 <button onClick={() => adminFileInputRef.current?.click()} className="absolute -bottom-2 -right-2 p-2 bg-white text-black rounded-full shadow-lg hover:scale-110 transition-transform z-20"><Camera size={14}/></button>
@@ -1264,24 +1138,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                                 <div><label className="text-[10px] text-gray-500 font-bold uppercase mb-1 block">Display Name</label><input type="text" value={adminEditName} onChange={(e) => setAdminEditName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white" /></div>
                                 <div><label className="text-[10px] text-gray-500 font-bold uppercase mb-1 block">Bio</label><textarea value={adminEditBio} onChange={(e) => setAdminEditBio(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white resize-none h-24" /></div>
                                 <button onClick={saveTargetProfile} disabled={loading} className="w-full py-3 bg-white text-black font-bold rounded-lg text-xs hover:bg-gray-200">Save Changes</button>
-                           </div>
-                       </div>
-                       
-                       {/* Give Frame Section */}
-                       <div className="space-y-4">
-                           <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2"><FrameIcon size={14}/> Assign Frame</h4>
-                           <div className="bg-[#0A0A0E] p-4 rounded-xl border border-white/5 h-48 overflow-y-auto">
-                                <div className="grid grid-cols-4 gap-2">
-                                    {adminFrames.map(frame => (
-                                        <button key={frame.id} onClick={() => handleAdminGiveFrame(frame)} className="relative group bg-white/5 rounded-lg p-2 flex flex-col items-center hover:bg-white/10">
-                                            <div className="relative w-10 h-10">
-                                                <div className="w-full h-full rounded-full bg-gray-800 border border-white/10"></div>
-                                                <img src={frame.url} className="absolute inset-0 scale-[1.35] object-contain" />
-                                            </div>
-                                            <span className="text-[8px] mt-1 text-gray-400 truncate w-full text-center">{frame.name}</span>
-                                        </button>
-                                    ))}
-                                </div>
                            </div>
                        </div>
                        
@@ -1356,12 +1212,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                             className="w-full h-full rounded-[1rem] object-cover bg-gray-900"
                             alt="Profile"
                         />
-                        {/* Frame Overlay */}
-                        {user.frameUrl && (
-                            <div className="absolute inset-0 pointer-events-none z-20 overflow-visible flex items-center justify-center">
-                                <img src={user.frameUrl} className="w-[135%] h-[135%] max-w-none object-contain" />
-                            </div>
-                        )}
                     </div>
                     {canEditProfile && isEditing && !uploading && (
                          <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-2 -right-2 p-1.5 bg-white text-black rounded-full shadow-lg hover:scale-110 transition-transform z-30"><Camera size={12} /></button>
@@ -1389,9 +1239,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
-                                    <button onClick={() => setShowBagModal(true)} className="p-2 bg-gradient-to-tr from-yellow-500 to-amber-500 rounded-xl text-black hover:scale-105 transition-transform shadow-lg active:scale-95" title="Bag">
-                                        <ShoppingBag size={16} />
-                                    </button>
                                     {canEditProfile && (
                                         <button onClick={() => setIsEditing(true)} className="p-2 bg-white/5 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
                                             <Edit2 size={16} />
@@ -1448,48 +1295,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
         <p className="text-center text-[10px] text-gray-700 pb-4">Heartly Voice v2.5</p>
       </div>
 
-      {showBagModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowBagModal(false)}>
-              <div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
-                  <div className="p-5 border-b border-white/5 flex justify-between items-center">
-                      <h3 className="text-lg font-bold text-white flex items-center gap-2"><ShoppingBag size={20} className="text-yellow-500"/> My Inventory</h3>
-                      <button onClick={() => setShowBagModal(false)} className="p-2 bg-white/5 rounded-full hover:bg-white/10"><X size={18} /></button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-5">
-                      {!user.ownedFrames || user.ownedFrames.length === 0 ? (
-                          <div className="text-center py-10 text-gray-500">
-                              <ShoppingBag size={48} className="mx-auto mb-4 opacity-20"/>
-                              <p className="text-sm font-bold">Your bag is empty.</p>
-                              <p className="text-xs">Collect frames from events or admins.</p>
-                          </div>
-                      ) : (
-                          <div className="grid grid-cols-3 gap-4">
-                              {/* Default/None Option */}
-                              <button onClick={handleRemoveFrame} className={`flex flex-col items-center gap-2 p-2 rounded-xl transition-all ${!user.frameUrl ? 'bg-white/10 border border-white/20' : 'hover:bg-white/5 border border-transparent'}`}>
-                                  <div className="w-16 h-16 rounded-full bg-gray-800 border-2 border-dashed border-white/20 flex items-center justify-center">
-                                      <X size={20} className="text-gray-500"/>
-                                  </div>
-                                  <span className="text-[10px] font-bold text-gray-400">None</span>
-                              </button>
-
-                              {/* Owned Frames */}
-                              {user.ownedFrames.map((frame, index) => (
-                                  <button key={index} onClick={() => handleEquipFrame(frame)} className={`relative flex flex-col items-center gap-2 p-2 rounded-xl transition-all group ${user.frameUrl === frame.url ? 'bg-violet-500/20 border border-violet-500/50' : 'hover:bg-white/5 border border-transparent'}`}>
-                                      <div className="relative w-16 h-16">
-                                          <div className="w-full h-full rounded-full bg-gray-800"></div>
-                                          <img src={frame.url} className="absolute inset-0 scale-[1.35] object-contain" />
-                                          {user.frameUrl === frame.url && <div className="absolute top-0 right-0 bg-green-500 text-black text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow-lg">EQUIPPED</div>}
-                                      </div>
-                                      <span className={`text-[10px] font-bold truncate w-full text-center ${user.frameUrl === frame.url ? 'text-violet-300' : 'text-gray-300'}`}>{frame.name}</span>
-                                  </button>
-                              ))}
-                          </div>
-                      )}
-                  </div>
-              </div>
-          </div>
-      )}
-
       {/* Admin Panel */}
       {showAdminPanel && isAdmin && (
         <div className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-xl flex flex-col md:flex-row overflow-hidden animate-fade-in">
@@ -1517,7 +1322,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                 
                 {[
                     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
-                    { id: 'frames', label: 'Frames', icon: FrameIcon }, // MOVED TO TOP
                     { id: 'users', label: 'User Mgmt', icon: Users },
                     { id: 'rooms', label: 'Rooms', icon: Mic },
                     { id: 'reports', label: 'Reports', icon: Flag },
@@ -1569,7 +1373,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                      {adminTab === 'stickers' && renderAdminStickers()}
                      {adminTab === 'backgrounds' && renderAdminBackgrounds()}
                      {adminTab === 'gifts' && renderAdminGifts()}
-                     {adminTab === 'frames' && renderAdminFrames()}
                  </div>
             </div>
         </div>
@@ -1579,8 +1382,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       {showPrivacyModal && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in overflow-hidden relative flex flex-col max-h-[70vh]"><div className="px-6 py-5 flex items-center justify-between border-b border-white/5"><h3 className="text-lg font-bold text-white flex items-center gap-2"><Shield size={20} className="text-emerald-400" /> Privacy</h3><button onClick={() => setShowPrivacyModal(false)} className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X size={18} /></button></div><div className="flex-1 overflow-y-auto p-6 space-y-6"><div><h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2">Blocked Users</h4>{loadingBlocked ? (<div className="flex justify-center py-4"><Loader2 className="animate-spin text-gray-500" /></div>) : blockedProfiles.length === 0 ? (<div className="text-center py-6 bg-white/5 rounded-2xl border border-white/5"><p className="text-gray-500 text-xs">No blocked users.</p></div>) : (<div className="space-y-2">{blockedProfiles.map(p => (<div key={p.uid} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><div className="flex items-center gap-3"><img src={p.photoURL || ''} className="w-8 h-8 rounded-full bg-gray-800" /><span className="text-sm font-bold text-white">{p.displayName}</span></div><button onClick={() => handleUnblock(p.uid)} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-gray-300 transition-colors" title="Unblock"><UserX size={16} /></button></div>))}</div>)}</div><div className="pt-6 border-t border-white/5"><h4 className="text-xs font-bold text-red-500 uppercase tracking-wider mb-4 flex items-center gap-2">Danger Zone</h4><button onClick={handleDeleteAccount} className="w-full py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"><Trash2 size={16} /> Request Account Deletion</button><p className="text-[10px] text-gray-600 mt-2 text-center">Deletion requests are processed manually within 24 hours.</p></div></div></div></div>)}
       {showRechargeModal && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in overflow-hidden relative"><div className="px-6 py-5 flex items-center justify-between border-b border-white/5"><h3 className="text-lg font-bold text-white flex items-center gap-2"><Wallet size={20} className="text-yellow-400" /> Wallet</h3><button onClick={() => !isProcessing && setShowRechargeModal(false)} className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X size={18} /></button></div><div className="flex border-b border-white/5 bg-black/20"><button onClick={() => setWalletTab('recharge')} className={`flex-1 py-4 text-xs font-bold transition-colors ${walletTab === 'recharge' ? 'text-yellow-400 border-b-2 border-yellow-400 bg-white/5' : 'text-gray-500 hover:text-white'}`}>Buy Coins</button><button onClick={() => setWalletTab('earnings')} className={`flex-1 py-4 text-xs font-bold transition-colors ${walletTab === 'earnings' ? 'text-green-400 border-b-2 border-green-400 bg-white/5' : 'text-gray-500 hover:text-white'}`}>Earnings</button></div><div className="p-6">{walletTab === 'recharge' ? (<><div className="text-center mb-8"><p className="text-gray-500 text-[10px] uppercase font-bold tracking-wider mb-2">Current Balance</p><h2 className="text-4xl font-extrabold text-white tracking-tight">{user.walletBalance || 0} <span className="text-lg font-medium text-yellow-500">Coins</span></h2></div><div className="space-y-4"><div className="relative"><div className="relative flex items-center"><Coins size={20} className="absolute left-4 text-yellow-400" /><input type="number" min="1" value={rechargeAmount} onChange={(e) => setRechargeAmount(Math.max(1, parseInt(e.target.value) || 0))} className="w-full bg-black/30 border border-white/10 rounded-xl py-4 pl-12 pr-4 text-white font-bold text-lg outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 transition-all placeholder-gray-600" /></div></div><div className="grid grid-cols-4 gap-2">{[10, 50, 100, 500].map(amt => (<button key={amt} onClick={() => setRechargeAmount(amt)} className={`py-2 rounded-lg text-xs font-bold transition-all border ${rechargeAmount === amt ? 'bg-yellow-500 border-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.4)]' : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10'}`}>+{amt}</button>))}</div><div className="bg-gradient-to-r from-emerald-900/30 to-teal-900/30 border border-emerald-500/20 rounded-xl p-4 flex justify-between items-center mt-4"><div className="flex items-center gap-2"><div className="p-2 bg-emerald-500/10 rounded-full"><CreditCard size={16} className="text-emerald-400" /></div><div><p className="text-xs font-bold text-gray-300">Total Price</p><p className="text-[10px] text-gray-500">1 Coin = ₹1.00</p></div></div><div className="text-xl font-bold text-white">₹{rechargeAmount.toFixed(2)}</div></div><button onClick={handleRecharge} disabled={isProcessing} className="w-full bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-black font-bold py-4 rounded-xl shadow-lg shadow-yellow-500/20 transition-all active:scale-[0.98] mt-2 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">{isProcessing ? <Loader2 className="animate-spin" size={20} /> : <><Coins size={20} /> Pay Now</>}</button></div></>) : (<><div className="bg-gradient-to-br from-green-900/40 to-emerald-900/40 border border-green-500/20 rounded-2xl p-6 text-center mb-6 relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-10"><Banknote size={64} className="text-green-400" /></div><p className="text-green-400 text-[10px] font-bold uppercase tracking-widest mb-1">Commission Earned</p><h2 className="text-4xl font-extrabold text-white mb-1">{user.commissionBalance || 0}</h2><p className="text-[10px] text-gray-400">Withdrawable Balance</p></div><div className="space-y-3"><div className="bg-[#0A0A0E] p-4 rounded-xl border border-white/5 flex items-center gap-3"><div className="bg-white/10 p-2 rounded-lg"><Landmark size={20} className="text-gray-300"/></div><div><p className="text-xs font-bold text-white">Bank Withdrawal</p><p className="text-[10px] text-gray-500">Min. 100 coins required</p></div></div><button onClick={handleWithdraw} disabled={isProcessing || (user.commissionBalance || 0) < 100} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-green-600/20 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">{isProcessing ? <Loader2 className="animate-spin" size={20} /> : "Withdraw Funds"}</button><p className="text-center text-[10px] text-gray-500 mt-2">Withdrawals are processed within 24 hours.</p></div></>)}</div></div></div>)}
       {showHelpModal && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in overflow-hidden relative flex flex-col max-h-[70vh]"><div className="px-6 py-5 flex items-center justify-between border-b border-white/5"><h3 className="text-lg font-bold text-white flex items-center gap-2"><HelpCircle size={20} className="text-cyan-400" /> Help & Support</h3><button onClick={() => setShowHelpModal(false)} className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X size={18} /></button></div><div className="flex border-b border-white/5 bg-black/20"><button onClick={() => setSupportTab('faq')} className={`flex-1 py-4 text-xs font-bold transition-colors ${supportTab === 'faq' ? 'text-cyan-400 border-b-2 border-cyan-400 bg-white/5' : 'text-gray-500 hover:text-white'}`}>FAQ</button><button onClick={() => setSupportTab('contact')} className={`flex-1 py-4 text-xs font-bold transition-colors ${supportTab === 'contact' ? 'text-cyan-400 border-b-2 border-cyan-400 bg-white/5' : 'text-gray-500 hover:text-white'}`}>Contact Us</button></div><div className="flex-1 overflow-y-auto p-6">{supportTab === 'faq' ? (<div className="space-y-3">{faqs.map((faq, i) => (<div key={i} className="bg-white/5 rounded-xl overflow-hidden border border-white/5"><button onClick={() => setExpandedFaq(expandedFaq === i ? null : i)} className="w-full px-4 py-4 flex items-center justify-between text-left hover:bg-white/5 transition-colors"><span className="text-sm font-bold text-white">{faq.q}</span>{expandedFaq === i ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}</button>{expandedFaq === i && (<div className="px-4 pb-4 pt-1 text-xs text-gray-400 leading-relaxed border-t border-white/5">{faq.a}</div>)}</div>))}</div>) : (<div className="space-y-4"><div className="bg-cyan-900/20 border border-cyan-500/20 p-4 rounded-xl"><p className="text-cyan-200 text-xs">Having trouble? Send us a message and our support team will reach out to you directly.</p></div><textarea value={supportMessage} onChange={(e) => setSupportMessage(e.target.value)} placeholder="Describe your issue..." className="w-full bg-black/30 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-cyan-500 min-h-[150px] resize-none" /><button onClick={handleSendSupport} disabled={sendingSupport || !supportMessage.trim()} className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50">{sendingSupport ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />} Send Message</button></div>)}</div></div></div>)}
-      {showUserList && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowUserList(null)}><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col max-h-[60vh]" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/5 flex items-center justify-between"><h3 className="text-lg font-bold text-white capitalize flex items-center gap-2"><Users size={18} className="text-violet-400"/> {showUserList}</h3><button onClick={() => setShowUserList(null)} className="p-1.5 bg-white/5 rounded-full hover:bg-white/10"><X size={18} /></button></div><div className="flex-1 overflow-y-auto p-2 space-y-2">{loadingList ? (<div className="flex justify-center py-8"><Loader2 className="animate-spin text-violet-500" /></div>) : userList.length === 0 ? (<div className="text-center py-8 text-gray-500 text-xs">No users found.</div>) : (userList.map(u => (<button key={u.uid} onClick={() => setVisitingProfile(u)} className="w-full flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors text-left border border-transparent hover:border-white/10"><div className="relative w-10 h-10"><img src={u.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover" />{u.frameUrl && <img src={u.frameUrl} className="absolute inset-0 w-full h-full scale-[1.35] object-contain pointer-events-none" />}</div><div><p className="font-bold text-sm text-white">{u.displayName}</p><p className="text-[10px] text-gray-400 truncate w-40">{u.bio || 'No bio'}</p></div></button>)))}</div></div></div>)}
-      {visitingProfile && (<div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setVisitingProfile(null)}><div className="bg-[#1A1A21] w-full max-w-sm rounded-[2rem] p-6 border border-white/10 shadow-2xl animate-fade-in relative" onClick={e => e.stopPropagation()}><div className="absolute top-4 right-4 text-gray-400 hover:text-white cursor-pointer" onClick={() => setVisitingProfile(null)}><X size={20} /></div><div className="flex flex-col items-center"><div className="relative mb-4 w-24 h-24"><img src={visitingProfile.photoURL || ''} className="w-full h-full rounded-full border-4 border-[#25252D] bg-gray-800 object-cover shadow-2xl" />{visitingProfile.frameUrl && <img src={visitingProfile.frameUrl} className="absolute inset-0 w-full h-full scale-[1.35] object-contain pointer-events-none" />}</div><h2 className="text-xl font-bold text-white mb-1 flex items-center gap-2">{visitingProfile.displayName}{visitingProfile.isAuthorizedListener && <ShieldCheck size={16} className="text-emerald-400" title="Authorized Listener" />}</h2><p className="text-violet-400 text-xs font-mono tracking-wider mb-2">ID: {visitingProfile.uniqueId || '....'}</p><p className="text-gray-400 text-sm text-center mb-6 px-4">{visitingProfile.bio || "No bio yet."}</p><div className="flex gap-8 mb-6 text-center w-full justify-center"><div><span className="block font-bold text-white text-lg">{visitingProfile.following?.length || 0}</span><span className="text-[10px] text-gray-500 uppercase font-bold">Following</span></div><div><span className="block font-bold text-white text-lg">{visitingProfile.followers?.length || 0}</span><span className="text-[10px] text-gray-500 uppercase font-bold">Followers</span></div></div>{user.uid !== visitingProfile.uid && (<button onClick={toggleFollowVisitor} className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${isFollowingVisitor ? 'bg-white/10 text-white hover:bg-white/20 border border-white/10' : 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white hover:opacity-90 shadow-lg'}`}>{isFollowingVisitor ? <UserCheck size={18} /> : <UserPlus size={18} />}{isFollowingVisitor ? 'Following' : 'Follow'}</button>)}</div></div></div>)}
+      {showUserList && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowUserList(null)}><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col max-h-[60vh]" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/5 flex items-center justify-between"><h3 className="text-lg font-bold text-white capitalize flex items-center gap-2"><Users size={18} className="text-violet-400"/> {showUserList}</h3><button onClick={() => setShowUserList(null)} className="p-1.5 bg-white/5 rounded-full hover:bg-white/10"><X size={18} /></button></div><div className="flex-1 overflow-y-auto p-2 space-y-2">{loadingList ? (<div className="flex justify-center py-8"><Loader2 className="animate-spin text-violet-500" /></div>) : userList.length === 0 ? (<div className="text-center py-8 text-gray-500 text-xs">No users found.</div>) : (userList.map(u => (<button key={u.uid} onClick={() => setVisitingProfile(u)} className="w-full flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors text-left border border-transparent hover:border-white/10"><div className="relative w-10 h-10"><img src={u.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover" /></div><div><p className="font-bold text-sm text-white">{u.displayName}</p><p className="text-[10px] text-gray-400 truncate w-40">{u.bio || 'No bio'}</p></div></button>)))}</div></div></div>)}
+      {visitingProfile && (<div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setVisitingProfile(null)}><div className="bg-[#1A1A21] w-full max-w-sm rounded-[2rem] p-6 border border-white/10 shadow-2xl animate-fade-in relative" onClick={e => e.stopPropagation()}><div className="absolute top-4 right-4 text-gray-400 hover:text-white cursor-pointer" onClick={() => setVisitingProfile(null)}><X size={20} /></div><div className="flex flex-col items-center"><div className="relative mb-4 w-24 h-24"><img src={visitingProfile.photoURL || ''} className="w-full h-full rounded-full border-4 border-[#25252D] bg-gray-800 object-cover shadow-2xl" /></div><h2 className="text-xl font-bold text-white mb-1 flex items-center gap-2">{visitingProfile.displayName}{visitingProfile.isAuthorizedListener && <ShieldCheck size={16} className="text-emerald-400" title="Authorized Listener" />}</h2><p className="text-violet-400 text-xs font-mono tracking-wider mb-2">ID: {visitingProfile.uniqueId || '....'}</p><p className="text-gray-400 text-sm text-center mb-6 px-4">{visitingProfile.bio || "No bio yet."}</p><div className="flex gap-8 mb-6 text-center w-full justify-center"><div><span className="block font-bold text-white text-lg">{visitingProfile.following?.length || 0}</span><span className="text-[10px] text-gray-500 uppercase font-bold">Following</span></div><div><span className="block font-bold text-white text-lg">{visitingProfile.followers?.length || 0}</span><span className="text-[10px] text-gray-500 uppercase font-bold">Followers</span></div></div>{user.uid !== visitingProfile.uid && (<button onClick={toggleFollowVisitor} className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${isFollowingVisitor ? 'bg-white/10 text-white hover:bg-white/20 border border-white/10' : 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white hover:opacity-90 shadow-lg'}`}>{isFollowingVisitor ? <UserCheck size={18} /> : <UserPlus size={18} />}{isFollowingVisitor ? 'Following' : 'Follow'}</button>)}</div></div></div>)}
     </div>
   );
 };

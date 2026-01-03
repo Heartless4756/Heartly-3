@@ -196,8 +196,8 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
         id: chatId,
         participants: participants,
         participantDetails: [
-            { uid: currentUser.uid, displayName: currentUser.displayName, photoURL: currentUser.photoURL, frameUrl: currentUser.frameUrl },
-            { uid: targetUser.uid, displayName: targetUser.displayName, photoURL: targetUser.photoURL, frameUrl: targetUser.frameUrl }
+            { uid: currentUser.uid, displayName: currentUser.displayName, photoURL: currentUser.photoURL },
+            { uid: targetUser.uid, displayName: targetUser.displayName, photoURL: targetUser.photoURL }
         ],
         lastMessage: 'Chat started',
         lastMessageTime: Date.now(),
@@ -422,7 +422,6 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
                             className="w-full h-full rounded-full bg-gray-800 object-cover ring-2 ring-white/10"
                             alt={activeChatUser.displayName || 'User'} 
                         />
-                        {activeChatUser.frameUrl && <img src={activeChatUser.frameUrl} className="absolute inset-0 w-full h-full scale-[1.35] object-contain pointer-events-none" />}
                         {/* Status Dot */}
                         {!isBlocked && (
                             <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#050505] rounded-full flex items-center justify-center z-20">
@@ -641,44 +640,4 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
       </div>
 
       {/* Expandable Search Bar */}
-      {isSearchOpen && (
-          <div className="animate-fade-in mb-6 relative z-10">
-              <div className={`
-                  bg-[#121216] border transition-all duration-300 relative overflow-hidden
-                  ${foundUser ? 'rounded-[2rem] border-violet-500/30' : 'rounded-[2rem] border-white/10 hover:border-white/20'}
-                  shadow-2xl shadow-black/50
-              `}>
-                {!foundUser ? (
-                    <div className="p-6">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                                <div className="p-1.5 bg-violet-500/10 rounded-lg"><Hash size={14} className="text-violet-400" /></div>
-                                Search User ID
-                            </h3>
-                        </div>
-                        
-                        <form onSubmit={handleSearch} className="flex gap-3">
-                            <div className="relative flex-1 group">
-                                <input 
-                                    type="text" 
-                                    value={searchId}
-                                    onChange={(e) => setSearchId(e.target.value.toUpperCase())}
-                                    maxLength={4}
-                                    placeholder="e.g. A7X2"
-                                    className="w-full bg-[#050505] border border-white/10 text-white text-center font-mono tracking-[0.2em] text-lg py-4 rounded-2xl focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none placeholder:text-gray-700 placeholder:text-xs placeholder:font-sans placeholder:tracking-normal uppercase transition-all"
-                                    autoFocus
-                                />
-                            </div>
-                            <button 
-                                type="submit"
-                                className="bg-white text-black p-4 rounded-2xl hover:bg-gray-200 transition-colors shadow-lg active:scale-95"
-                            >
-                                <Search size={22} />
-                            </button>
-                        </form>
-                        {searchError && <p className="text-red-400 text-xs mt-3 font-bold text-center bg-red-500/10 py-2 rounded-lg animate-fade-in">{searchError}</p>}
-                    </div>
-                ) : (
-                    <div className="p-6 bg-gradient-to-b from-violet-900/20 to-[#121216]">
-                        <div className="flex justify-between items-start mb-4">
-                            <span className="text-[10px] font-bold text-violet-300 bg-violet-500/10 px-2 py-1
+      {isSearchOpen
