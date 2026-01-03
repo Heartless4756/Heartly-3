@@ -60,7 +60,7 @@ interface ProfileProps {
 
 const ADMIN_EMAIL = "sv116774@gmail.com";
 
-type AdminTab = 'dashboard' | 'users' | 'rooms' | 'listeners' | 'reports' | 'stickers' | 'backgrounds' | 'gifts' | 'frames';
+type AdminTab = 'dashboard' | 'frames' | 'users' | 'rooms' | 'listeners' | 'reports' | 'stickers' | 'backgrounds' | 'gifts';
 
 interface SettingsItemProps {
   onClick: () => void;
@@ -367,7 +367,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
               createdAt: Date.now()
           });
           alert("Frame uploaded!");
-          fetchAdminStats();
+          fetchAdminStats(); // Refresh list immediately
       } catch(e) { console.error(e); alert("Failed to upload frame"); } finally { setLoading(false); }
   };
 
@@ -1158,6 +1158,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       </div>
   );
 
+  // --- ADDED RENDER FUNCTION FOR FRAMES ---
   const renderAdminFrames = () => (
       <div className="h-full flex flex-col animate-fade-in">
           <div className="flex justify-between items-center mb-6">
@@ -1175,7 +1176,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                   <div key={frame.id} className="relative group bg-[#1A1A21] rounded-xl p-4 border border-white/5 flex flex-col items-center">
                       <div className="relative w-16 h-16 mb-2">
                           <div className="w-full h-full rounded-full bg-gray-800 border-2 border-white/10"></div>
-                          {/* Frame Overlay */}
+                          {/* Frame Overlay - Fixed Scale to ensure perfect fit */}
                           <img src={frame.url} className="absolute inset-0 w-full h-full scale-[1.35] object-contain pointer-events-none" />
                       </div>
                       <p className="text-xs font-bold text-white text-center truncate w-full">{frame.name}</p>
@@ -1516,11 +1517,11 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                 
                 {[
                     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+                    { id: 'frames', label: 'Frames', icon: FrameIcon }, // MOVED TO TOP
                     { id: 'users', label: 'User Mgmt', icon: Users },
                     { id: 'rooms', label: 'Rooms', icon: Mic },
                     { id: 'reports', label: 'Reports', icon: Flag },
                     { id: 'gifts', label: 'Gifts', icon: Gift },
-                    { id: 'frames', label: 'Frames', icon: FrameIcon }, // Added Frame Tab
                     { id: 'listeners', label: 'Listeners', icon: Headphones },
                     { id: 'stickers', label: 'Stickers', icon: Smile },
                     { id: 'backgrounds', label: 'Backgrounds', icon: ImageIcon },
