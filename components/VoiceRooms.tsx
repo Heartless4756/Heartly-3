@@ -148,7 +148,7 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <h1 className="text-3xl font-extrabold text-white tracking-tight leading-none">
-                Live <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400">Rooms</span>
+                Heartly
               </h1>
               <div className="flex items-center gap-2">
                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
@@ -157,13 +157,6 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
             </div>
             
             <div className="flex items-center gap-3">
-              <button 
-                onClick={handleQuickJoin}
-                className="w-12 h-12 flex items-center justify-center text-black bg-white rounded-full transition-all hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.2)] touch-manipulation"
-                title="Quick Join"
-              >
-                <Zap size={22} fill="currentColor" />
-              </button>
               <button 
                 onClick={() => setIsSearchOpen(true)}
                 className="w-12 h-12 flex items-center justify-center text-white bg-white/5 border border-white/10 rounded-full transition-colors hover:bg-white/10 touch-manipulation"
