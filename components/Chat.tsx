@@ -18,6 +18,13 @@ interface ChatProps {
   onJoinRoom: (roomId: string) => void;
 }
 
+// Type compatible with both UserProfile and ChatMetadata participant details
+interface ChatUser {
+  uid: string;
+  displayName: string | null;
+  photoURL: string | null;
+}
+
 const simpleEncrypt = (text: string, key: string) => {
   return text.split('').map((c, i) => 
     String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))
@@ -32,7 +39,7 @@ const ENCRYPTION_KEY = "heartly_secret_key";
 
 export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [activeChatUser, setActiveChatUser] = useState<UserProfile | null>(null);
+  const [activeChatUser, setActiveChatUser] = useState<ChatUser | null>(null);
   
   // Search State
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -184,7 +191,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
     }
   };
 
-  const startChat = async (targetUser: UserProfile) => {
+  const startChat = async (targetUser: ChatUser) => {
     const participants = [currentUser.uid, targetUser.uid].sort();
     const chatId = participants.join('_');
 
@@ -196,8 +203,8 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
         id: chatId,
         participants: participants,
         participantDetails: [
-            { uid: currentUser.uid, displayName: currentUser.displayName, photoURL: currentUser.photoURL },
-            { uid: targetUser.uid, displayName: targetUser.displayName, photoURL: targetUser.photoURL }
+            { uid: currentUser.uid, displayName: currentUser.displayName || 'User', photoURL: currentUser.photoURL },
+            { uid: targetUser.uid, displayName: targetUser.displayName || 'User', photoURL: targetUser.photoURL }
         ],
         lastMessage: 'Chat started',
         lastMessageTime: Date.now(),
@@ -639,5 +646,120 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
          </button>
       </div>
 
-      {/* Expandable Search Bar */}
-      {isSearchOpen
+      {isSearchOpen && (
+        <div className="bg-[#121216] border-b border-white/5 p-4 animate-fade-in mb-4 rounded-xl">
+           <form onSubmit={handleSearch} className="flex gap-2 mb-4">
+              <input 
+                type="text" 
+                value={searchId}
+                onChange={(e) => setSearchId(e.target.value)}
+                placeholder="Enter 4-character ID (e.g. A1B2)"
+                maxLength={4}
+                className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none uppercase font-mono"
+              />
+              <button 
+                type="submit" 
+                className="px-4 py-2 bg-violet-600 rounded-xl font-bold text-xs"
+              >
+                Find
+              </button>
+           </form>
+
+           {searchError && (
+             <p className="text-red-400 text-xs font-bold text-center mb-4">{searchError}</p>
+           )}
+
+           {foundUser && (
+             <div className="bg-white/5 p-3 rounded-xl flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                   <img src={foundUser.photoURL || ''} className="w-10 h-10 rounded-full bg-gray-800 object-cover" />
+                   <div>
+                      <p className="text-sm font-bold text-white">{foundUser.displayName}</p>
+                      <p className="text-[10px] text-gray-500">@{foundUser.uniqueId}</p>
+                   </div>
+                </div>
+                <button 
+                  onClick={() => startChat(foundUser)}
+                  className="px-4 py-2 bg-white text-black rounded-lg text-xs font-bold hover:bg-gray-200"
+                >
+                  Message
+                </button>
+             </div>
+           )}
+        </div>
+      )}
+
+      {/* Chat List */}
+      <div className="flex-1 overflow-y-auto no-scrollbar">
+          {loadingChats ? (
+            <div className="flex justify-center py-10"><Loader2 className="animate-spin text-gray-500" /></div>
+          ) : chats.length === 0 ? (
+            <div className="text-center py-20 opacity-50">
+               <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <MessageSquare size={32} className="text-gray-500" />
+               </div>
+               <p className="text-gray-400 text-sm font-bold">No messages yet.</p>
+               <p className="text-[10px] text-gray-600 mt-1">Search for a user ID to start chatting.</p>
+            </div>
+          ) : (
+            chats.map(chat => {
+              const otherUser = getOtherUser(chat);
+              const unread = chat.unreadCounts?.[currentUser.uid] || 0;
+              const lastMsgTime = new Date(chat.lastMessageTime);
+              const isLongPressed = longPressedChatId === chat.id;
+
+              return (
+                <div 
+                  key={chat.id}
+                  onClick={() => startChat(otherUser)}
+                  onTouchStart={() => handleStartPress(chat.id)}
+                  onTouchEnd={handleEndPress}
+                  onMouseDown={() => handleStartPress(chat.id)}
+                  onMouseUp={handleEndPress}
+                  onMouseLeave={handleEndPress}
+                  className={`relative p-4 border-b border-white/5 hover:bg-white/5 transition-all cursor-pointer ${isLongPressed ? 'bg-red-500/10' : ''}`}
+                >
+                   {isLongPressed && (
+                       <div className="absolute inset-0 bg-red-900/80 z-20 flex items-center justify-center animate-fade-in backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>
+                           <button onClick={() => handleDeleteChat(chat.id)} className="flex flex-col items-center gap-2 text-white">
+                               <div className="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center shadow-lg animate-bounce">
+                                   <Trash2 size={24} />
+                               </div>
+                               <span className="font-bold text-xs">Tap to Delete</span>
+                           </button>
+                           <button onClick={() => setLongPressedChatId(null)} className="absolute top-2 right-2 p-2 text-white/50"><X size={16} /></button>
+                       </div>
+                   )}
+
+                   <div className="flex items-center gap-4">
+                      <div className="relative">
+                          <img src={otherUser.photoURL || `https://ui-avatars.com/api/?name=${otherUser.displayName}`} className="w-14 h-14 rounded-full bg-gray-800 object-cover" />
+                          {/* Online indicator could go here if we tracked presence globally */}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-baseline mb-1">
+                              <h3 className="font-bold text-white text-base truncate">{otherUser.displayName}</h3>
+                              <span className="text-[10px] text-gray-500 font-medium">
+                                {lastMsgTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                              </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                              <p className={`text-sm truncate max-w-[180px] ${unread > 0 ? 'text-white font-bold' : 'text-gray-400'}`}>
+                                 {chat.typing?.[otherUser.uid] ? <span className="text-fuchsia-400 italic">typing...</span> : chat.lastMessage}
+                              </p>
+                              {unread > 0 && (
+                                <div className="w-5 h-5 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-lg">
+                                    {unread}
+                                </div>
+                              )}
+                          </div>
+                      </div>
+                   </div>
+                </div>
+              );
+            })
+          )}
+      </div>
+    </div>
+  );
+};
