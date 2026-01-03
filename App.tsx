@@ -425,9 +425,12 @@ const App: React.FC = () => {
         followers: dbUser?.followers || [],
         following: dbUser?.following || [],
         walletBalance: dbUser?.walletBalance || 0,
+        commissionBalance: dbUser?.commissionBalance || 0,
         isAuthorizedListener: dbUser?.isAuthorizedListener,
         isBanned: dbUser?.isBanned,
-        blockedUsers: dbUser?.blockedUsers || []
+        blockedUsers: dbUser?.blockedUsers || [],
+        frameUrl: dbUser?.frameUrl || null,
+        ownedFrames: dbUser?.ownedFrames || []
     };
   };
 
