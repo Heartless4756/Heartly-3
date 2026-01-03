@@ -67,6 +67,17 @@ const StatCard = ({ label, value, icon: Icon, color }: { label: string, value: s
     </div>
 );
 
+// Helper to load Razorpay Script
+const loadRazorpay = () => {
+    return new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+    });
+};
+
 export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJoinRoom }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(user.displayName || '');
@@ -78,6 +89,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [rechargeAmount, setRechargeAmount] = useState(100);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [walletTab, setWalletTab] = useState<'recharge' | 'earnings'>('recharge');
 
   const [showBagModal, setShowBagModal] = useState(false);
@@ -193,6 +205,91 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
         setIsEditing(false);
         onUpdate();
     } catch (e) { console.error("Error saving profile:", e); } finally { setLoading(false); }
+  };
+
+  // --- Payment Handler ---
+  const handleRecharge = async () => {
+      setIsProcessing(true);
+      try {
+          const isLoaded = await loadRazorpay();
+          if (!isLoaded) {
+              alert('Razorpay SDK failed to load. Check internet connection.');
+              setIsProcessing(false);
+              return;
+          }
+
+          // 1. Create Order via API
+          const response = await fetch('/api/create-order', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ amount: rechargeAmount, userId: user.uid }),
+          });
+
+          if (!response.ok) {
+              throw new Error(`Order API Failed: ${response.statusText}`);
+          }
+
+          const data = await response.json();
+
+          // 2. Open Razorpay
+          const options = {
+              key: data.key, 
+              amount: data.amount,
+              currency: data.currency,
+              name: "Heartly Voice",
+              description: `Recharge ${rechargeAmount} Coins`,
+              image: "https://cdn-icons-png.flaticon.com/512/2525/2525772.png",
+              order_id: data.id, 
+              handler: async function (response: any) {
+                  try {
+                      // 3. Verify Payment via API
+                      const verifyRes = await fetch('/api/verify-payment', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                              razorpay_order_id: response.razorpay_order_id,
+                              razorpay_payment_id: response.razorpay_payment_id,
+                              razorpay_signature: response.razorpay_signature,
+                              userId: user.uid,
+                              amount: rechargeAmount
+                          }),
+                      });
+                      
+                      const verifyData = await verifyRes.json();
+                      if (verifyData.success) {
+                          alert("Payment Successful! Coins added.");
+                          setShowRechargeModal(false);
+                          onUpdate(); // Refresh user balance in App
+                      } else {
+                          alert("Payment Verification Failed: " + verifyData.error);
+                      }
+                  } catch (e) {
+                      console.error(e);
+                      alert("Verification error occurred.");
+                  }
+              },
+              prefill: {
+                  name: user.displayName || '',
+                  email: user.email || '',
+                  contact: '' 
+              },
+              theme: {
+                  color: "#8B5CF6"
+              }
+          };
+
+          const rzp1 = new (window as any).Razorpay(options);
+          rzp1.on('payment.failed', function (response: any){
+              alert(response.error.description);
+          });
+          rzp1.open();
+
+      } catch (error: any) {
+          console.error("Recharge Error:", error);
+          alert("Recharge failed. Make sure the backend API is running. " + error.message);
+      } finally {
+          setIsProcessing(false);
+      }
   };
 
   const handleShowList = async (type: 'followers' | 'following') => {
@@ -389,7 +486,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                     <div className="w-full h-full rounded-[1.2rem] p-[2px] bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg relative z-0">
                         <img src={isEditing ? editedPhoto : (user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`)} className="w-full h-full rounded-[1rem] object-cover bg-gray-900" alt="Profile" />
                     </div>
-                    {/* User Profile Frame Update */}
                     {user.frameUrl && (<img src={user.frameUrl} className="absolute inset-0 w-full h-full scale-[1.3] object-contain pointer-events-none z-10" />)}
                     {canEditProfile && isEditing && !uploading && (<button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-2 -right-2 p-1.5 bg-white text-black rounded-full shadow-lg hover:scale-110 transition-transform z-30"><Camera size={12} /></button>)}
                 </div>
@@ -444,7 +540,35 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       {showUserList && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowUserList(null)}><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/5 flex justify-between items-center"><h3 className="text-lg font-bold text-white capitalize">{showUserList}</h3><button onClick={() => setShowUserList(null)}><X size={20} className="text-gray-400"/></button></div><div className="flex-1 overflow-y-auto p-4 space-y-3">{loadingList ? (<div className="flex justify-center py-8"><Loader2 className="animate-spin text-gray-500" /></div>) : userList.length === 0 ? (<p className="text-center text-gray-500 text-sm py-8">No users found.</p>) : (userList.map(u => (<div key={u.uid} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><div className="flex items-center gap-3"><img src={u.photoURL || ''} className="w-10 h-10 rounded-full bg-gray-800 object-cover" /><div><p className="text-sm font-bold text-white">{u.displayName}</p><p className="text-[10px] text-gray-500">@{u.uniqueId}</p></div></div></div>)))}</div></div></div>)}
       {showHelpModal && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowHelpModal(false)}><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/5 flex justify-between items-center"><h3 className="text-lg font-bold text-white flex items-center gap-2"><HelpCircle size={20} className="text-cyan-400"/> Help & Support</h3><button onClick={() => setShowHelpModal(false)}><X size={20} className="text-gray-400"/></button></div><div className="p-4 space-y-4">{faqs.map((faq, i) => (<div key={i} className="border border-white/5 rounded-xl overflow-hidden"><button onClick={() => setExpandedFaq(expandedFaq === i ? null : i)} className="w-full flex justify-between items-center p-3 bg-white/5 text-left"><span className="text-xs font-bold text-white">{faq.q}</span>{expandedFaq === i ? <ChevronUp size={14} className="text-gray-400"/> : <ChevronDown size={14} className="text-gray-400"/>}</button>{expandedFaq === i && <div className="p-3 text-xs text-gray-400 bg-black/20">{faq.a}</div>}</div>))}<div className="pt-4 border-t border-white/5"><p className="text-xs text-gray-400 mb-2">Still need help?</p><button className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold transition-colors">Contact Support</button></div></div></div></div>)}
       {showPrivacyModal && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowPrivacyModal(false)}><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/5 flex justify-between items-center"><h3 className="text-lg font-bold text-white flex items-center gap-2"><Shield size={20} className="text-emerald-400"/> Privacy Center</h3><button onClick={() => setShowPrivacyModal(false)}><X size={20} className="text-gray-400"/></button></div><div className="p-4 space-y-4 overflow-y-auto"><div><h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Blocked Users</h4>{loadingBlocked ? (<div className="flex justify-center py-4"><Loader2 className="animate-spin text-gray-500" /></div>) : blockedProfiles.length === 0 ? (<p className="text-gray-500 text-xs italic">No blocked users.</p>) : (<div className="space-y-2">{blockedProfiles.map(p => (<div key={p.uid} className="flex justify-between items-center bg-white/5 p-2 rounded-lg"><span className="text-xs text-white font-bold">{p.displayName}</span><button className="text-[10px] text-red-400 hover:text-white">Unblock</button></div>))}</div>)}</div></div></div></div>)}
-      {showRechargeModal && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowRechargeModal(false)}><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/5 flex justify-between items-center"><h3 className="text-lg font-bold text-white flex items-center gap-2"><Wallet size={20} className="text-yellow-500"/> Wallet</h3><button onClick={() => setShowRechargeModal(false)}><X size={20} className="text-gray-400"/></button></div><div className="p-6 text-center"><p className="text-gray-400 text-xs mb-2">Current Balance</p><h2 className="text-4xl font-extrabold text-white mb-6 flex justify-center items-center gap-2"><Coins size={32} className="text-yellow-500"/> {user.walletBalance || 0}</h2><div className="grid grid-cols-3 gap-3 mb-6">{[100, 500, 1000, 2000, 5000, 10000].map(amt => (<button key={amt} onClick={() => setRechargeAmount(amt)} className={`py-3 rounded-xl border font-bold text-sm transition-all ${rechargeAmount === amt ? 'bg-yellow-500 text-black border-yellow-500' : 'bg-white/5 border-white/10 text-gray-400 hover:border-white/20'}`}>₹{amt}</button>))}</div><button className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-4 rounded-xl shadow-lg shadow-yellow-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"><CreditCard size={18}/> Recharge Now</button></div></div></div>)}
+      
+      {/* Updated Recharge Modal with onClick Handler */}
+      {showRechargeModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowRechargeModal(false)}>
+            <div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b border-white/5 flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2"><Wallet size={20} className="text-yellow-500"/> Wallet</h3>
+                    <button onClick={() => setShowRechargeModal(false)}><X size={20} className="text-gray-400"/></button>
+                </div>
+                <div className="p-6 text-center">
+                    <p className="text-gray-400 text-xs mb-2">Current Balance</p>
+                    <h2 className="text-4xl font-extrabold text-white mb-6 flex justify-center items-center gap-2"><Coins size={32} className="text-yellow-500"/> {user.walletBalance || 0}</h2>
+                    <div className="grid grid-cols-3 gap-3 mb-6">
+                        {[100, 500, 1000, 2000, 5000, 10000].map(amt => (
+                            <button key={amt} onClick={() => setRechargeAmount(amt)} className={`py-3 rounded-xl border font-bold text-sm transition-all ${rechargeAmount === amt ? 'bg-yellow-500 text-black border-yellow-500' : 'bg-white/5 border-white/10 text-gray-400 hover:border-white/20'}`}>₹{amt}</button>
+                        ))}
+                    </div>
+                    <button 
+                        onClick={handleRecharge} 
+                        disabled={isProcessing}
+                        className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-4 rounded-xl shadow-lg shadow-yellow-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                        {isProcessing ? <Loader2 className="animate-spin" size={18}/> : <CreditCard size={18}/>} 
+                        {isProcessing ? 'Processing...' : 'Recharge Now'}
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 };
