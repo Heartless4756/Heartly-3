@@ -91,6 +91,9 @@ const App: React.FC = () => {
 
   const handleTouchMove = (e: React.TouchEvent | React.MouseEvent) => {
     if (!isDraggingRef.current) return;
+    // Prevent default browser scrolling when dragging
+    if(e.cancelable) e.preventDefault();
+    
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
 
@@ -453,7 +456,7 @@ const App: React.FC = () => {
 
   return (
     <div className="h-[100dvh] w-full flex flex-col max-w-md mx-auto bg-[#050505] shadow-2xl shadow-black overflow-hidden relative border-x border-white/5 pt-safe">
-      <div className="absolute inset-0 z-0 flex flex-col pt-safe">
+      <div className="absolute inset-0 z-0 flex flex-col pt-safe overflow-hidden">
           <div className="flex-1 overflow-hidden relative"> 
             {renderView()}
           </div>
@@ -476,7 +479,7 @@ const App: React.FC = () => {
             {/* Floating Minimized Disc */}
             {isRoomMinimized && (
                 <div 
-                    style={{ left: discPosition.x, top: discPosition.y }}
+                    style={{ left: discPosition.x, top: discPosition.y, touchAction: 'none' }}
                     className="fixed z-[100] touch-none"
                     onTouchStart={handleTouchStart}
                     onTouchMove={handleTouchMove}

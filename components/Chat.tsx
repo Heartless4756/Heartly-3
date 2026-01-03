@@ -420,7 +420,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
         <div className="absolute top-4 left-4 right-4 z-30">
             <div className="bg-[#121216]/80 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3 flex items-center justify-between shadow-2xl shadow-black/50">
                 <div className="flex items-center gap-3">
-                    <button onClick={() => setActiveChatId(null)} className="p-2 -ml-2 text-gray-400 hover:text-white transition-colors rounded-full hover:bg-white/5">
+                    <button onClick={() => setActiveChatId(null)} className="p-2 -ml-2 text-gray-400 hover:text-white transition-colors rounded-full hover:bg-white/5 active:scale-90">
                         <ChevronLeft size={24} />
                     </button>
                     <div className="relative w-10 h-10">
@@ -485,7 +485,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
         </div>
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto pt-24 px-4 pb-28 space-y-3 z-10 no-scrollbar">
+        <div className="flex-1 overflow-y-auto pt-24 px-4 pb-28 space-y-3 z-10 native-scroll no-scrollbar">
           <div className="flex justify-center mb-6">
              <div className="bg-[#1A1A21] border border-white/5 px-4 py-2 rounded-full text-[10px] font-medium text-gray-500 flex items-center gap-2 shadow-lg">
                 <Lock size={12} className="text-emerald-500" /> End-to-end encrypted.
@@ -640,7 +640,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
          </div>
          <button 
             onClick={() => setIsSearchOpen(!isSearchOpen)}
-            className={`p-3 rounded-2xl transition-all shadow-xl ${isSearchOpen ? 'bg-violet-600 text-white' : 'bg-[#121216] border border-white/10 text-gray-400 hover:text-white'}`}
+            className={`p-3 rounded-2xl transition-all shadow-xl active:scale-90 ${isSearchOpen ? 'bg-violet-600 text-white' : 'bg-[#121216] border border-white/10 text-gray-400 hover:text-white'}`}
          >
              {isSearchOpen ? <X size={20} /> : <Search size={20} />}
          </button>
@@ -690,7 +690,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
       )}
 
       {/* Chat List */}
-      <div className="flex-1 overflow-y-auto no-scrollbar">
+      <div className="flex-1 overflow-y-auto native-scroll no-scrollbar">
           {loadingChats ? (
             <div className="flex justify-center py-10"><Loader2 className="animate-spin text-gray-500" /></div>
           ) : chats.length === 0 ? (

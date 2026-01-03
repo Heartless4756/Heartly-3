@@ -149,7 +149,7 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
             <div className="flex items-center gap-3">
               <button 
                 onClick={() => setIsSearchOpen(true)}
-                className="w-12 h-12 flex items-center justify-center text-white bg-white/5 border border-white/10 rounded-full transition-colors hover:bg-white/10 touch-manipulation"
+                className="w-12 h-12 flex items-center justify-center text-white bg-white/5 border border-white/10 rounded-full transition-colors hover:bg-white/10 touch-manipulation active:scale-90"
               >
                 <Search size={22} />
               </button>
@@ -157,7 +157,7 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
               {myRoom && (
                   <button 
                     onClick={() => handleRoomClick(myRoom)}
-                    className="w-12 h-12 flex items-center justify-center text-white bg-gradient-to-tr from-violet-600 to-fuchsia-600 rounded-full shadow-lg shadow-violet-500/25 hover:scale-105 transition-transform touch-manipulation"
+                    className="w-12 h-12 flex items-center justify-center text-white bg-gradient-to-tr from-violet-600 to-fuchsia-600 rounded-full shadow-lg shadow-violet-500/25 hover:scale-105 transition-transform touch-manipulation active:scale-90"
                     title="Go to My Room"
                   >
                     <Radio size={22} />
@@ -169,7 +169,7 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
       </div>
 
       {/* Room List with Scroll Fix */}
-      <div className="flex-1 px-6 space-y-4 overflow-y-auto relative z-10 pb-32 overscroll-y-contain">
+      <div className="flex-1 px-6 space-y-4 native-scroll relative z-10 pb-32 no-scrollbar">
         {loading ? (
            <div className="flex justify-center py-20"><div className="w-10 h-10 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin"/></div>
         ) : publicRooms.length === 0 ? (
@@ -185,7 +185,7 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
             <div 
               key={room.id}
               onClick={() => handleRoomClick(room)}
-              className="group relative bg-[#121216]/60 backdrop-blur-xl rounded-[2rem] border border-white/5 overflow-hidden transition-all hover:border-violet-500/30 active:scale-[0.98] shadow-lg cursor-pointer touch-manipulation"
+              className="group relative bg-[#121216]/60 backdrop-blur-xl rounded-[2rem] border border-white/5 overflow-hidden transition-all hover:border-violet-500/30 active:scale-[0.98] shadow-lg cursor-pointer touch-manipulation transform translate-z-0"
             >
               {/* Top Accent Gradient */}
               <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-white/5 to-transparent opacity-50 group-hover:opacity-100 transition-opacity pointer-events-none" />

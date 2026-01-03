@@ -126,7 +126,7 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
               uid: currentUser.uid,
               displayName: currentUser.displayName || 'Listener',
               photoURL: currentUser.photoURL,
-              frameUrl: currentUser.frameUrl || null, // Include frameUrl
+              frameUrl: currentUser.frameUrl, // Include frameUrl
               bio: currentUser.bio || 'Ready to listen.',
               lastActive: Date.now(),
               isBusy: false
@@ -268,7 +268,7 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
       </div>
 
       {/* Online Listeners Grid */}
-      <div className="flex-1 overflow-y-auto space-y-4 relative z-10 pb-4 no-scrollbar">
+      <div className="flex-1 overflow-y-auto space-y-4 native-scroll relative z-10 pb-4 no-scrollbar">
           {activeListeners.length === 0 ? (
               <div className="text-center py-24 opacity-60">
                   <div className="w-24 h-24 bg-[#121216] border border-dashed border-white/10 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -348,7 +348,6 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
                       <div className="relative mb-3 w-20 h-20">
                           <img src={selectedListener.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover border-4 border-[#202025]" />
                           {selectedListener.frameUrl && <img src={selectedListener.frameUrl} className="absolute inset-0 w-full h-full scale-[1.3] object-contain pointer-events-none" />}
-                          
                           <div className="absolute bottom-0 right-0 bg-emerald-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full border border-[#202025] flex items-center gap-1 z-20">
                               <Zap size={10} fill="black"/> Live
                           </div>
