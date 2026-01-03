@@ -222,8 +222,8 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
                                alt={p.displayName} 
                                className="w-full h-full rounded-full border-2 border-[#121216] bg-gray-800 object-cover shadow-md"
                              />
-                             {/* Frame Overlay in List */}
-                             {p.frameUrl && <img src={p.frameUrl} className="absolute -inset-1 w-[120%] h-[120%] object-contain pointer-events-none z-20" />}
+                             {/* Frame Overlay in List - Perfect Fit Update */}
+                             {p.frameUrl && <img src={p.frameUrl} className="absolute inset-0 w-full h-full scale-[1.3] object-contain pointer-events-none z-20" />}
                          </div>
                       ))}
                       {room.participants.length > 4 && (

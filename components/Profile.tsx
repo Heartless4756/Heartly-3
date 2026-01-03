@@ -312,7 +312,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
           </form>
           {fetchedAdminUser ? (
               <div className="bg-[#121216] border border-white/10 rounded-2xl p-6 flex-1 overflow-y-auto">
-                   <div className="flex items-center gap-6 mb-8"><div className="relative group w-24 h-24"><img src={fetchedAdminUser.photoURL || ''} className="w-full h-full rounded-2xl bg-gray-800 object-cover border-4 border-[#25252D]" />{fetchedAdminUser.frameUrl && <img src={fetchedAdminUser.frameUrl} className="absolute -inset-2 w-[120%] h-[120%] object-contain" />}</div><div><h3 className="text-2xl font-bold text-white">{fetchedAdminUser.displayName}</h3><p className="text-gray-500 text-sm">{fetchedAdminUser.email}</p><p className="text-violet-400 font-mono mt-1">ID: {fetchedAdminUser.uniqueId}</p></div></div>
+                   <div className="flex items-center gap-6 mb-8"><div className="relative group w-24 h-24"><img src={fetchedAdminUser.photoURL || ''} className="w-full h-full rounded-2xl bg-gray-800 object-cover border-4 border-[#25252D]" />{fetchedAdminUser.frameUrl && <img src={fetchedAdminUser.frameUrl} className="absolute inset-0 w-full h-full scale-[1.3] object-contain" />}</div><div><h3 className="text-2xl font-bold text-white">{fetchedAdminUser.displayName}</h3><p className="text-gray-500 text-sm">{fetchedAdminUser.email}</p><p className="text-violet-400 font-mono mt-1">ID: {fetchedAdminUser.uniqueId}</p></div></div>
                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                        <div className="space-y-4">
                            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Edit Profile</h4>
@@ -389,7 +389,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                     <div className="w-full h-full rounded-[1.2rem] p-[2px] bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg relative z-0">
                         <img src={isEditing ? editedPhoto : (user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`)} className="w-full h-full rounded-[1rem] object-cover bg-gray-900" alt="Profile" />
                     </div>
-                    {user.frameUrl && (<div className="absolute -inset-3 z-10 pointer-events-none"><img src={user.frameUrl} className="w-full h-full object-contain" /></div>)}
+                    {/* User Profile Frame Update */}
+                    {user.frameUrl && (<img src={user.frameUrl} className="absolute inset-0 w-full h-full scale-[1.3] object-contain pointer-events-none z-10" />)}
                     {canEditProfile && isEditing && !uploading && (<button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-2 -right-2 p-1.5 bg-white text-black rounded-full shadow-lg hover:scale-110 transition-transform z-30"><Camera size={12} /></button>)}
                 </div>
                 <div className="flex-1 min-w-0 pt-0.5">

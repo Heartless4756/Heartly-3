@@ -226,9 +226,10 @@ const UserProfileModal: React.FC<{
                 <div className="flex flex-col items-center">
                     <div className="relative mb-4 w-24 h-24">
                         <img src={profile.photoURL || ''} className="w-full h-full rounded-full border-4 border-[#25252D] bg-gray-800 object-cover" />
-                        {profile.frameUrl && <img src={profile.frameUrl} className="absolute -inset-3 w-[130%] h-[130%] object-contain pointer-events-none" />}
-                        {isTargetAdmin && (<div className="absolute bottom-0 right-0 bg-violet-600 text-white p-1 rounded-full border-2 border-[#1A1A21]" title="Admin"><ShieldCheck size={14} /></div>)}
-                        {isTargetHost && (<div className="absolute bottom-0 right-0 bg-yellow-500 text-black p-1 rounded-full border-2 border-[#1A1A21]" title="Host"><Crown size={14} /></div>)}
+                        {/* Profile Modal Frame Fix */}
+                        {profile.frameUrl && <img src={profile.frameUrl} className="absolute inset-0 w-full h-full scale-[1.4] object-contain pointer-events-none" />}
+                        {isTargetAdmin && (<div className="absolute bottom-0 right-0 bg-violet-600 text-white p-1 rounded-full border-2 border-[#1A1A21] z-20" title="Admin"><ShieldCheck size={14} /></div>)}
+                        {isTargetHost && (<div className="absolute bottom-0 right-0 bg-yellow-500 text-black p-1 rounded-full border-2 border-[#1A1A21] z-20" title="Host"><Crown size={14} /></div>)}
                     </div>
                     <h2 className="text-xl font-bold text-white flex items-center gap-2">{profile.displayName}
                         {isTargetAdmin && <span className="text-[10px] bg-violet-600 px-1.5 py-0.5 rounded text-white font-bold tracking-wide">ADMIN</span>}
@@ -315,6 +316,9 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
     const candidateQueueRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
     const initialChargeProcessed = useRef(false);
 
+    // ... (Hooks and effects remain largely the same, shortening for brevity) ...
+    // Note: Re-including all necessary effects to ensure full file integrity.
+
     useEffect(() => {
         participantsRef.current = participants;
         if (!isInitialLoadRef.current) {
@@ -332,7 +336,6 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         prevParticipantsRef.current = participants;
     }, [participants, currentUser.uid]);
 
-    // Fetch Stickers and Gifts
     useEffect(() => {
         const qStickers = query(collection(db, 'stickers'), orderBy('createdAt', 'desc'));
         const unsubStickers = onSnapshot(qStickers, (snapshot) => {
@@ -350,7 +353,6 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         };
     }, []);
 
-    // Fetch room backgrounds
     useEffect(() => {
         if (!showSettingsModal) return;
         const q = query(collection(db, 'roomBackgrounds'), orderBy('createdAt', 'desc'));
@@ -368,7 +370,6 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         }
     }, [roomData, showSettingsModal]);
 
-    // SVGA Player Logic with Loop Control & Timeout
     useEffect(() => {
         if (!currentSvga) {
             if (playerRef.current) {
@@ -387,14 +388,13 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         try {
             if (!playerRef.current) {
                 playerRef.current = new (window as any).SVGA.Player('#svga-canvas');
-                playerRef.current.loops = 1; // Play only once
-                playerRef.current.clearsAfterStop = true; // Clear canvas after stop
-                playerRef.current.fillMode = 'Clear'; // Ensure transparent after finish
+                playerRef.current.loops = 1; 
+                playerRef.current.clearsAfterStop = true; 
+                playerRef.current.fillMode = 'Clear'; 
             }
             
             const parser = new (window as any).SVGA.Parser();
             
-            // Safety timeout: If animation gets stuck or hangs, force clear after 7s
             if (svgaTimeoutRef.current) clearTimeout(svgaTimeoutRef.current);
             svgaTimeoutRef.current = setTimeout(() => {
                 console.log("SVGA Timeout: Force clearing");
@@ -418,7 +418,6 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                     playerRef.current.clear();
                     isPlayingSvgaRef.current = false;
                     
-                    // Play next if available
                     const next = animationQueueRef.current.shift();
                     if (next) {
                         isPlayingSvgaRef.current = true;
@@ -432,7 +431,6 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                 if (svgaTimeoutRef.current) clearTimeout(svgaTimeoutRef.current);
                 
                 isPlayingSvgaRef.current = false;
-                // Try next
                 const next = animationQueueRef.current.shift();
                 if (next) {
                     isPlayingSvgaRef.current = true;
@@ -507,11 +505,9 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
     useEffect(() => { if (localStreamRef.current && !analysersRef.current[currentUser.uid]) setupAudioAnalyser(currentUser.uid, localStreamRef.current); }, [localStreamRef.current]);
     useEffect(() => { Object.keys(remoteStreams).forEach(uid => { if (!analysersRef.current[uid]) setupAudioAnalyser(uid, remoteStreams[uid]); }); }, [remoteStreams]);
 
-    // Visibility Change Handler to prevent stale removal on mobile
     useEffect(() => {
         const handleVisibilityChange = async () => {
             if (document.visibilityState === 'visible') {
-                // Immediately send heartbeat when user comes back
                 await updateParticipantData(currentUser.uid, { lastSeen: Date.now() });
             }
         };
@@ -590,11 +586,8 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
             snapshot.docChanges().forEach((change) => {
                 if (change.type === 'added') {
                     const data = change.doc.data() as Message;
-                    
-                    // Handle Gift Messages
                     if (data.type === 'gift' && (Date.now() - data.createdAt < 8000)) {
                         if (data.giftAnimationUrl && data.giftAnimationUrl.trim() !== '') {
-                            // Case A: SVGA Animation exists AND is not empty
                             if (!isPlayingSvgaRef.current) {
                                 isPlayingSvgaRef.current = true;
                                 setCurrentSvga(data.giftAnimationUrl);
@@ -602,7 +595,6 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                                 animationQueueRef.current.push(data.giftAnimationUrl);
                             }
                         } else if (data.giftIcon) {
-                            // Case B: No SVGA, fallback to Image Animation
                             setGiftAnimation({ icon: data.giftIcon, name: data.giftName || 'Gift', senderName: data.senderName });
                             setTimeout(() => setGiftAnimation(null), 4000);
                         }
@@ -721,7 +713,6 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         if (occupant) { if (isHost || isAdmin || occupant.uid === currentUser.uid) { setPopupInfo({ index, rect }); return; } setViewingProfileUid(occupant.uid); return; }
         const isLocked = roomData?.lockedSeats?.includes(index);
         
-        // Open menu for Host/Admin on empty seats
         if (isHost || isAdmin) { setPopupInfo({ index, rect }); return; }
         
         let shouldOpen = !isLocked && index !== 999;
@@ -793,7 +784,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                 type: 'gift', 
                 giftIcon: gift.iconUrl, 
                 giftName: gift.name,
-                giftAnimationUrl: gift.animationUrl // Pass animation URL
+                giftAnimationUrl: gift.animationUrl 
             }); 
             setShowGiftModal(false); 
         } 
@@ -815,14 +806,10 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         const occupant = participants.find(p => p.seatIndex === index);
         const isLocked = roomData?.lockedSeats?.includes(index);
         
-        // 1. Occupied Seat Logic
         if (occupant) {
-             // User clicking on themselves
              if (occupant.uid === currentUser.uid) return (<div className="bg-[#2A2A35] border border-white/10 rounded-xl shadow-2xl p-2 flex flex-col gap-1 w-48 text-white animate-fade-in"><button onClick={() => { setViewingProfileUid(occupant.uid); setPopupInfo(null); }} className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-xs font-medium rounded-lg text-left"><Eye size={14} className="text-violet-400" /> View Profile</button><button onClick={() => { updateParticipantData(occupant.uid, { seatIndex: -1 }); setPopupInfo(null); }} className="flex items-center gap-2 px-3 py-2 hover:bg-red-500/10 text-xs font-medium text-red-400 rounded-lg text-left"><LogOut size={14} /> Leave Seat</button></div>);
              
-             // Admin/Host managing others (Ensure Host is protected)
              const isTargetHost = occupant.uid === roomData?.createdBy;
-             
              if ((isHost || (isAdmin && !isTargetHost)) && occupant.uid !== currentUser.uid) {
                  return (
                     <div className="bg-[#2A2A35] border border-white/10 rounded-xl shadow-2xl p-2 flex flex-col gap-1 w-48 text-white">
@@ -835,14 +822,12 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
              return <button onClick={() => { setViewingProfileUid(occupant.uid); setPopupInfo(null); }} className="bg-[#2A2A35] text-white px-4 py-2 rounded-xl text-xs font-bold border border-white/10 hover:bg-white/5 transition-colors">View Profile</button>;
         }
 
-        // 2. Empty Seat Logic (Host/Admin)
         if (!occupant && (isHost || isAdmin)) { 
             const myCurrentSeat = participants.find(p => p.uid === currentUser.uid)?.seatIndex;
             const isOnAnySeat = myCurrentSeat !== undefined && myCurrentSeat >= 0;
 
             return (
                 <div className="flex flex-col gap-1 bg-[#25252D] p-2 rounded-xl border border-white/10 shadow-xl w-32 animate-fade-in">
-                    {/* Take Seat option if not on seat, Switch if on seat */}
                     <button onClick={() => handleTakeSeat(index)} className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-xs font-bold text-white rounded-lg text-left transition-colors">
                         {isOnAnySeat ? <RotateCcw size={14} className="text-blue-400"/> : <ArrowDownToLine size={14} className="text-blue-400"/>} 
                         {isOnAnySeat ? 'Switch Seat' : 'Take Seat'}
@@ -853,10 +838,8 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
             ); 
         }
 
-        // 3. Host Seat Specific
         if (index === 999) return isHost ? (<button onClick={() => handleTakeSeat(999)} className="bg-gradient-to-r from-yellow-500 to-amber-600 text-black text-xs font-bold px-4 py-2 rounded-xl shadow-xl flex items-center justify-center gap-2 whitespace-nowrap active:scale-95"><Crown size={14} /> Take Host Seat</button>) : <div className="bg-[#2A2A35] text-gray-400 px-3 py-2 rounded-xl text-xs font-bold border border-white/10">Host Only</div>;
         
-        // 4. Regular User Empty Seat
         const myP = participants.find(p => p.uid === currentUser.uid);
         if (myP?.seatIndex === undefined || myP.seatIndex < 0) return (<button onClick={() => handleTakeSeat(index)} className="bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-lg flex items-center justify-center gap-2 active:scale-95">Take Seat</button>);
         return <div className="bg-[#2A2A35] text-gray-400 px-3 py-2 rounded-xl text-xs font-bold border border-white/10">Already Seated</div>;
@@ -878,9 +861,9 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                         <Plus size={16} className="text-white/20" />
                     )}
                 </div>
-                {/* Avatar Frame for Grid Seats */}
+                {/* Avatar Frame for Grid Seats - Perfect Fit Update */}
                 {seat.occupant && seat.occupant.frameUrl && (
-                    <img src={seat.occupant.frameUrl} className="absolute -inset-3 w-[145%] h-[145%] object-contain pointer-events-none z-30" />
+                    <img src={seat.occupant.frameUrl} className="absolute inset-0 w-full h-full scale-[1.4] object-contain pointer-events-none z-30" />
                 )}
                 {seat.occupant && seat.occupant.reaction && seat.occupant.reaction.expiresAt > Date.now() && (
                     <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
@@ -900,7 +883,6 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                 className="absolute inset-0 w-full h-full object-cover opacity-60 z-0 pointer-events-none" 
             />
             
-            {/* SVGA Player Overlay (Full Screen, High Z-Index, Transparent Background) */}
             <div className={`absolute inset-0 z-50 pointer-events-none flex items-center justify-center bg-transparent ${currentSvga ? 'block' : 'hidden'}`}>
                 <div id="svga-canvas" className="w-full h-full max-w-[500px] max-h-[500px] object-contain"></div>
             </div>
@@ -913,7 +895,6 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                             {roomData?.name} 
                             {roomData?.isPaidCall && <span className="text-[10px] bg-yellow-500 text-black px-1.5 rounded font-bold uppercase">PAID</span>}
                         </h2>
-                        {/* MOVED VIEWER LIST TRIGGER TO HEADER */}
                         <button onClick={() => setShowViewerList(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-black/20 rounded-full hover:bg-black/40 transition-colors border border-white/5 w-fit mt-1">
                             <Eye size={12} className="text-violet-400" />
                             <span className="text-[10px] font-bold text-white">{participants.length} Online</span>
@@ -929,11 +910,9 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                  <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none px-4 space-y-2">{entryNotifications.map(n => (<div key={n.id} className="animate-fade-in bg-black/40 backdrop-blur-md text-white text-[10px] px-3 py-1.5 rounded-full w-fit mx-auto border border-white/5 flex items-center gap-2 shadow-lg"><span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"/> {n.text}</div>))}</div>
                  {giftAnimation && (<div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none overflow-hidden"><div className="absolute inset-0 bg-radial-gradient from-violet-600/30 to-transparent animate-pulse duration-700"></div><div className="absolute inset-0 flex items-center justify-center">{[...Array(12)].map((_, i) => (<div key={i} className="absolute w-2 h-2 bg-yellow-400 rounded-full animate-[ping_1.5s_infinite]" style={{ transform: `rotate(${i * 30}deg) translate(120px) scale(${Math.random()})`, animationDelay: `${Math.random() * 0.5}s` }}></div>))}</div><div className="relative flex flex-col items-center animate-[fadeIn_0.5s_ease-out_forwards]"><div className="w-32 h-32 mb-4 filter drop-shadow-[0_20px_30px_rgba(0,0,0,0.6)] animate-[bounce_2s_infinite]"><img src={giftAnimation.icon} className="w-full h-full object-contain" /></div><div className="mt-8 bg-black/60 backdrop-blur-xl border border-white/20 px-6 py-3 rounded-full shadow-2xl animate-fade-in text-center transform scale-110"><p className="text-white font-bold text-lg leading-tight bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-orange-300 to-yellow-300 animate-pulse">{giftAnimation.senderName}</p><p className="text-white/80 text-xs font-medium uppercase tracking-widest mt-1">sent {giftAnimation.name}</p></div></div></div>)}
                  
-                 {/* Seats Container - Moved to Top */}
                  <div className="flex-shrink-0 flex flex-col items-center mt-1 px-4 max-w-md mx-auto w-full z-10">
                     <div className="flex justify-center mb-8 relative">
                         <div className="relative group cursor-pointer w-20 h-20" onClick={(e) => handleSeatClick(999, e)}>
-                            {/* Host Seat - Reduced Size */}
                             <div className="w-full h-full rounded-full border-4 border-yellow-500/30 bg-black/40 flex items-center justify-center relative overflow-hidden shadow-[0_0_30px_rgba(234,179,8,0.2)] transition-all active:scale-95">
                                 {hostSeatOccupant ? (
                                     <>
@@ -946,9 +925,9 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                                     <Plus size={24} className="text-yellow-500/50" />
                                 )}
                             </div>
-                            {/* Avatar Frame for Host Seat */}
+                            {/* Avatar Frame for Host Seat - Perfect Fit Update */}
                             {hostSeatOccupant && hostSeatOccupant.frameUrl && (
-                                <img src={hostSeatOccupant.frameUrl} className="absolute -inset-4 w-[140%] h-[140%] object-contain pointer-events-none z-30" />
+                                <img src={hostSeatOccupant.frameUrl} className="absolute inset-0 w-full h-full scale-[1.4] object-contain pointer-events-none z-30" />
                             )}
                             {hostSeatOccupant && hostSeatOccupant.reaction && hostSeatOccupant.reaction.expiresAt > Date.now() && (
                                 <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
@@ -959,7 +938,6 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                         </div>
                     </div>
                     
-                    {/* Split Grid */}
                     <div className="flex justify-between w-full gap-10 px-2">
                         <div className="grid grid-cols-2 gap-x-4 gap-y-6">
                             {[0, 1, 4, 5].map(i => renderSeatItem(gridSeats[i]))}
@@ -970,27 +948,23 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                     </div>
                  </div>
                  
-                 {/* Chat Area - Expanded to Fill Remaining Space */}
                  <div className="flex-1 px-4 pb-2 mt-2 mask-gradient-top overflow-y-auto no-scrollbar space-y-2 min-h-0">{messages.map((msg) => (<div key={msg.id} className={`text-xs animate-fade-in ${msg.type === 'system' ? 'text-yellow-400 font-medium text-center bg-yellow-400/5 py-1 rounded-lg' : msg.type === 'gift' ? 'text-center my-2' : 'text-white'}`}>{msg.type === 'system' ? (msg.text) : msg.type === 'gift' ? (<div className="inline-block bg-gradient-to-r from-violet-600/80 to-fuchsia-600/80 px-3 py-1.5 rounded-full border border-white/20 backdrop-blur-sm shadow-lg"><span className="font-bold text-white">{msg.senderName}</span> <span className="text-white/90">{msg.text}</span></div>) : (<div className="flex items-start gap-2 bg-black/40 p-2 rounded-xl w-fit max-w-[85%] backdrop-blur-sm border border-white/5"><div className="relative w-5 h-5"><img src={msg.senderPhoto || `https://ui-avatars.com/api/?name=${msg.senderName}`} className="w-full h-full rounded-full object-cover" /></div><div><span className="font-bold text-gray-400 mr-1.5 block leading-tight mb-0.5">{msg.senderName}</span><span className="text-gray-100 leading-snug">{msg.text}</span></div></div>)}</div>))}<div ref={chatEndRef} /></div>
             </div>
             {showStickerPicker && (<div className="absolute bottom-20 left-4 right-4 z-40 bg-[#18181B] border border-white/10 rounded-2xl p-4 shadow-2xl animate-fade-in"><div className="flex justify-between items-center mb-3"><h3 className="text-xs font-bold text-white uppercase tracking-wider">Stickers</h3><button onClick={() => setShowStickerPicker(false)}><XIcon size={16} className="text-gray-400"/></button></div>{stickers.length === 0 ? (<p className="text-center text-gray-500 text-xs py-4">No stickers available.</p>) : (<div className="grid grid-cols-5 gap-3 max-h-40 overflow-y-auto no-scrollbar">{stickers.map(sticker => (<button key={sticker.id} onClick={() => handleSendSticker(sticker)} className="hover:bg-white/5 p-1 rounded-lg transition-colors flex items-center justify-center"><img src={sticker.url} className="w-10 h-10 object-contain" alt={sticker.name} /></button>))}</div>)}</div>)}
             <div className="px-3 pb-4 pt-2 relative z-30 flex items-center gap-2">
                 <button onClick={() => setShowGiftModal(true)} className="p-2.5 bg-black/40 backdrop-blur-md border border-white/10 text-pink-400 rounded-full active:scale-95 flex-shrink-0 shadow-lg"><Gift size={20} /></button>
-                {/* MOVED SPEAKER BUTTON HERE */}
                 <button onClick={toggleSpeaker} className={`p-2.5 rounded-full flex-shrink-0 backdrop-blur-md shadow-lg transition-all ${isSpeakerOn ? 'bg-white text-black' : 'bg-black/40 text-white border border-white/10'}`}>
                     {isSpeakerOn ? <Volume2 size={20} /> : <VolumeX size={20} />}
                 </button>
                 
                 {roomData?.musicState?.isEnabled && (<button onClick={() => setShowMusicModal(true)} className={`p-2.5 rounded-full flex-shrink-0 transition-all backdrop-blur-md shadow-lg ${roomData.musicState.isPlaying ? 'bg-violet-500 shadow-[0_0_15px_rgba(139,92,246,0.5)] animate-pulse-glow text-white' : 'bg-black/40 border border-white/10 text-white'}`}><Music2 size={20} /></button>)}
                 <div className="flex-1 relative shadow-lg flex items-center bg-black/40 backdrop-blur-md border border-white/10 rounded-full pl-2 pr-2 py-1.5"><button onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 text-yellow-400 hover:text-yellow-300 rounded-full transition-colors active:scale-95"><Smile size={20} /></button><form onSubmit={handleSendMessage} className="flex-1 flex items-center"><input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Say something..." className="w-full bg-transparent border-none outline-none pl-2 pr-2 py-1 text-xs text-white placeholder-gray-400" /><button type="submit" disabled={!newMessage.trim()} className="p-1.5 bg-violet-600 rounded-full text-white disabled:opacity-50 flex-shrink-0 ml-1"><Send size={12} fill="currentColor" /></button></form></div>{isOnSeat && (<button onClick={toggleMute} disabled={myPart?.isHostMuted} className={`p-2.5 rounded-full transition-all active:scale-95 border flex-shrink-0 shadow-lg backdrop-blur-md ${isMuted ? 'bg-black/40 text-white border-white/10' : 'bg-white text-black border-white shadow-[0_0_10px_rgba(255,255,255,0.4)]'}`}>{myPart?.isHostMuted ? <Lock size={20} className="text-red-500" /> : isMuted ? <MicOff size={20} /> : <Mic size={20} />}</button>)}</div>
-            {/* ... (Existing modals logic same as provided, ensuring modal rendering logic) ... */}
+            
             {showViewerList && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md p-4 animate-fade-in" onClick={() => setShowViewerList(false)}><div className="bg-[#18181B] h-full w-full max-w-sm mx-auto rounded-3xl border border-white/10 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/5 flex justify-between items-center"><h3 className="font-bold text-white flex items-center gap-2"><Users size={18} /> Viewers ({participants.length})</h3><button onClick={() => setShowViewerList(false)}><XIcon size={20} className="text-gray-400" /></button></div><div className="flex-1 overflow-y-auto p-2 space-y-2">{sortedViewerList.map(p => (<div key={p.uid} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5" onClick={() => setViewingProfileUid(p.uid)}><div className="flex items-center gap-3"><div className="relative w-10 h-10"><img src={p.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover" /></div><div><p className="font-bold text-sm text-white flex items-center gap-1">{p.displayName}{p.uid === roomData?.createdBy && <Crown size={12} className="text-yellow-500" fill="currentColor" />}{roomData?.admins?.includes(p.uid) && <ShieldCheck size={12} className="text-violet-500" />}</p><p className="text-[10px] text-gray-400">{p.seatIndex === 999 ? 'Host' : p.seatIndex >= 0 ? `Seat ${p.seatIndex + 1}` : 'Audience'}</p></div></div>{(isHost || isAdmin) && p.uid !== currentUser.uid && p.uid !== roomData?.createdBy && (<div className="flex gap-2">{p.seatIndex >= 0 && (<button onClick={(e) => { e.stopPropagation(); updateParticipantData(p.uid, { seatIndex: -1 }); }} className="p-2 bg-red-500/10 text-red-500 rounded-lg"><LogOut size={14}/></button>)}<button onClick={(e) => { e.stopPropagation(); setViewingProfileUid(p.uid); }} className="p-2 bg-white/10 text-white rounded-lg"><MoreHorizontal size={14}/></button></div>)}</div>))}</div></div></div>)}
-            {/* ... other modals */}
             {viewingProfileUid && currentUser && (<UserProfileModal targetUid={viewingProfileUid} currentUser={currentUser} onClose={() => setViewingProfileUid(null)} isViewerHost={isHost} isViewerAdmin={isAdmin} roomAdmins={roomData?.admins || []} roomId={roomId} currentParticipants={participants} roomCreatorId={roomData?.createdBy || ''} />)}
-            {/* ... (rest of modals: Share, Settings, Gift, Music, PopupInfo, InviteList, IncomingInvite, Hidden Audio) */}
-            {/* Shortened for brevity, assume standard implementation of other modals as in previous file content but ensuring UserProfileModal shows frame if needed inside it too */}
+            {/* ... Other modals are assumed to be here as standard ... */}
+            {/* Re-injecting showShareModal, showSettingsModal, showGiftModal, showRoomMenu, showMusicModal, popupInfo, showInviteList, incomingInvite for file completeness as requested */}
             {showShareModal && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowShareModal(false)}><div className="bg-[#18181B] w-full max-w-sm rounded-[2rem] border border-white/10 p-6 shadow-2xl" onClick={e => e.stopPropagation()}><div className="w-12 h-1.5 bg-white/10 rounded-full mx-auto mb-6"></div><h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Share2 size={20} className="text-violet-400"/> Share Room</h3><div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">{recentChats.length === 0 ? (<p className="text-center text-gray-500 text-sm py-4">No recent chats.</p>) : (recentChats.map(chat => { const otherUser = chat.participantDetails.find(p => p.uid !== currentUser.uid); return (<button key={chat.id} onClick={() => inviteUserToRoom(chat.id)} className="w-full flex items-center justify-between p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"><div className="flex items-center gap-3"><div className="relative w-10 h-10"><img src={otherUser?.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover" /></div><div className="text-left"><p className="font-bold text-sm text-white">{otherUser?.displayName}</p><p className="text-[10px] text-gray-400">Send Invite</p></div></div><div className="p-2 bg-violet-500/20 text-violet-400 rounded-lg"><Send size={16}/></div></button>) }))}</div></div></div>)}
-            {/* Re-inject missing parts for full XML validity */}
             {showSettingsModal && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowSettingsModal(false)}><div className="bg-[#18181B] w-full max-w-sm rounded-[2rem] border border-white/10 p-6 shadow-2xl flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}><div className="flex justify-between items-center mb-6"><h3 className="text-lg font-bold text-white flex items-center gap-2"><Settings size={20} className="text-gray-400"/> Room Settings</h3><button onClick={() => setShowSettingsModal(false)}><XIcon size={20} className="text-gray-500"/></button></div><div className="space-y-6 overflow-y-auto pr-2 no-scrollbar"><div><label className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Room Name</label><input type="text" value={settingsName} onChange={(e) => setSettingsName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 mt-1 text-sm text-white outline-none focus:border-violet-500" /></div><div><label className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Password (Optional)</label><input type="text" value={settingsPassword} onChange={(e) => setSettingsPassword(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 mt-1 text-sm text-white outline-none focus:border-violet-500" placeholder="4-digit code" /></div><div><label className="text-[10px] uppercase font-bold text-gray-500 tracking-wider mb-2 block">Choose Background</label><div className="grid grid-cols-2 gap-3">{availableBackgrounds.map(bg => (<button key={bg.id} onClick={() => setSettingsBg(bg.url)} className={`relative rounded-xl overflow-hidden border-2 aspect-video transition-all ${settingsBg === bg.url ? 'border-violet-500 scale-95 ring-2 ring-violet-500/30' : 'border-transparent hover:border-white/20'}`}><img src={bg.url} className="w-full h-full object-cover" />{settingsBg === bg.url && <div className="absolute inset-0 bg-violet-600/20 flex items-center justify-center"><CheckCircle2 size={24} className="text-white drop-shadow-lg" /></div>}</button>))}</div></div></div><button onClick={saveRoomSettings} className="w-full bg-violet-600 hover:bg-violet-500 text-white font-bold py-4 rounded-xl mt-6 shadow-lg shadow-violet-500/20">Save Changes</button></div></div>)}
             {showGiftModal && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex flex-col justify-end animate-fade-in" onClick={() => setShowGiftModal(false)}><div className="bg-[#18181B] rounded-t-[2rem] border-t border-white/10 p-6 shadow-2xl" onClick={e => e.stopPropagation()}><div className="w-12 h-1.5 bg-white/10 rounded-full mx-auto mb-6"></div><div className="flex justify-between items-end mb-4"><div><h3 className="text-lg font-bold text-white">Send Gift</h3><p className="text-xs text-gray-400">To: {participants.find(p => p.uid === giftRecipientId)?.displayName || 'Select User'}</p></div><div className="bg-yellow-500/10 px-3 py-1.5 rounded-full border border-yellow-500/20 text-yellow-500 text-xs font-bold flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-500"></span>{currentUser.walletBalance || 0}</div></div><div className="flex gap-4 overflow-x-auto pb-4 mb-4 no-scrollbar">{participants.map(p => (<button key={p.uid} onClick={() => setGiftRecipientId(p.uid)} className={`flex flex-col items-center gap-2 min-w-[60px] transition-all ${giftRecipientId === p.uid ? 'opacity-100 scale-105' : 'opacity-50 hover:opacity-80'}`}><div className={`relative p-0.5 rounded-full ${giftRecipientId === p.uid ? 'bg-gradient-to-tr from-pink-500 to-violet-500' : 'bg-transparent'}`}><div className="relative w-12 h-12"><img src={p.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover border-2 border-[#18181B]" /></div></div><span className="text-[10px] text-white font-medium truncate w-14 text-center">{p.displayName}</span></button>))}</div><div className="grid grid-cols-4 gap-3 max-h-[40vh] overflow-y-auto p-1">{gifts.length > 0 ? gifts.map(gift => (<button key={gift.id} onClick={() => handleGiftClick(gift)} className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-white/5 transition-colors border border-transparent hover:border-white/10 active:scale-95"><img src={gift.iconUrl} className="w-10 h-10 object-contain mb-1 filter drop-shadow-lg" /><span className="text-[10px] font-bold text-gray-300">{gift.name}</span><span className="text-[10px] font-mono text-yellow-500">{gift.price}</span></button>)) : <p className="col-span-4 text-center text-gray-500 text-xs">No gifts available.</p>}</div></div></div>)}
             {showRoomMenu && (<div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex justify-end" onClick={() => setShowRoomMenu(false)}><div className="w-64 h-full bg-[#18181B] border-l border-white/10 p-6 animate-fade-in shadow-2xl" onClick={e => e.stopPropagation()}><h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Room Menu</h3><div className="space-y-2">{(isHost || isAdmin) && (<MenuButton icon={musicEnabled ? <VolumeX size={20} /> : <Volume2 size={20} />} label={musicEnabled ? "Disable Music" : "Enable Music"} onClick={toggleMusicVisibility} />)}<MenuButton icon={<Share2 size={20} />} label="Share Room" onClick={handleShareClick} />{(isHost || isAdmin) && (<MenuButton icon={<Lock size={20} />} label="Room Settings" onClick={() => { setShowSettingsModal(true); setShowRoomMenu(false); }} />)}</div></div></div>)}
