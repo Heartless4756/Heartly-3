@@ -126,6 +126,7 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
               uid: currentUser.uid,
               displayName: currentUser.displayName || 'Listener',
               photoURL: currentUser.photoURL,
+              frameUrl: currentUser.frameUrl, // Include frameUrl
               bio: currentUser.bio || 'Ready to listen.',
               lastActive: Date.now(),
               isBusy: false
@@ -287,11 +288,12 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
 
                       <div className="flex items-start justify-between relative z-10">
                           <div className="flex items-center gap-4">
-                              <div className="relative">
+                              <div className="relative w-14 h-14">
                                   {/* Avatar Ring */}
                                   <div className={`absolute -inset-1 rounded-full ${listener.isBusy ? 'bg-yellow-500/20' : 'bg-emerald-500/20'} blur-sm`}></div>
-                                  <img src={listener.photoURL || ''} className="w-14 h-14 rounded-full bg-gray-800 object-cover border-2 border-[#121216] relative z-10" />
-                                  <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-[#121216] z-20 flex items-center justify-center ${listener.isBusy ? 'bg-yellow-500' : 'bg-emerald-500'}`}>
+                                  <img src={listener.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover border-2 border-[#121216] relative z-10" />
+                                  {listener.frameUrl && <img src={listener.frameUrl} className="absolute inset-0 w-full h-full scale-[1.35] object-contain pointer-events-none z-20" />}
+                                  <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-[#121216] z-30 flex items-center justify-center ${listener.isBusy ? 'bg-yellow-500' : 'bg-emerald-500'}`}>
                                       {listener.isBusy ? <Clock size={8} className="text-black"/> : <Zap size={8} className="text-black" fill="black"/>}
                                   </div>
                               </div>
@@ -340,9 +342,10 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
                   <div className="w-12 h-1.5 bg-white/10 rounded-full mx-auto mb-6"></div>
 
                   <div className="flex flex-col items-center mb-6">
-                      <div className="relative mb-3">
-                          <img src={selectedListener.photoURL || ''} className="w-20 h-20 rounded-full bg-gray-800 object-cover border-4 border-[#202025]" />
-                          <div className="absolute bottom-0 right-0 bg-emerald-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full border border-[#202025] flex items-center gap-1">
+                      <div className="relative mb-3 w-20 h-20">
+                          <img src={selectedListener.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover border-4 border-[#202025]" />
+                          {selectedListener.frameUrl && <img src={selectedListener.frameUrl} className="absolute inset-0 w-full h-full scale-[1.35] object-contain pointer-events-none" />}
+                          <div className="absolute bottom-0 right-0 bg-emerald-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full border border-[#202025] flex items-center gap-1 z-20">
                               <Zap size={10} fill="black"/> Live
                           </div>
                       </div>
@@ -394,7 +397,10 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
               <div className="w-40 h-40 rounded-full border border-white/10 flex items-center justify-center mb-8 relative">
                   <div className="absolute inset-0 rounded-full border border-emerald-500/50 animate-[ping_2s_linear_infinite]"></div>
                   <div className="absolute inset-0 rounded-full border border-emerald-500/30 animate-[ping_2s_linear_infinite_0.5s]"></div>
-                  <img src={activeListeners.find(l => l.uid === outgoingRequest.listenerId)?.photoURL || ''} className="w-36 h-36 rounded-full object-cover relative z-10" />
+                  <div className="relative w-36 h-36 z-10">
+                      <img src={activeListeners.find(l => l.uid === outgoingRequest.listenerId)?.photoURL || ''} className="w-full h-full rounded-full object-cover" />
+                      {activeListeners.find(l => l.uid === outgoingRequest.listenerId)?.frameUrl && <img src={activeListeners.find(l => l.uid === outgoingRequest.listenerId)?.frameUrl} className="absolute inset-0 w-full h-full scale-[1.35] object-contain pointer-events-none" />}
+                  </div>
               </div>
               
               <h2 className="text-3xl font-bold text-white mb-2">{outgoingRequest.callerName}</h2>

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { 
@@ -195,8 +196,8 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
         id: chatId,
         participants: participants,
         participantDetails: [
-            { uid: currentUser.uid, displayName: currentUser.displayName, photoURL: currentUser.photoURL },
-            { uid: targetUser.uid, displayName: targetUser.displayName, photoURL: targetUser.photoURL }
+            { uid: currentUser.uid, displayName: currentUser.displayName, photoURL: currentUser.photoURL, frameUrl: currentUser.frameUrl },
+            { uid: targetUser.uid, displayName: targetUser.displayName, photoURL: targetUser.photoURL, frameUrl: targetUser.frameUrl }
         ],
         lastMessage: 'Chat started',
         lastMessageTime: Date.now(),
@@ -415,15 +416,16 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
                     <button onClick={() => setActiveChatId(null)} className="p-2 -ml-2 text-gray-400 hover:text-white transition-colors rounded-full hover:bg-white/5">
                         <ChevronLeft size={24} />
                     </button>
-                    <div className="relative">
+                    <div className="relative w-10 h-10">
                         <img 
                             src={activeChatUser.photoURL || `https://ui-avatars.com/api/?name=${activeChatUser.displayName}`} 
-                            className="w-10 h-10 rounded-full bg-gray-800 object-cover ring-2 ring-white/10"
+                            className="w-full h-full rounded-full bg-gray-800 object-cover ring-2 ring-white/10"
                             alt={activeChatUser.displayName || 'User'} 
                         />
+                        {activeChatUser.frameUrl && <img src={activeChatUser.frameUrl} className="absolute inset-0 w-full h-full scale-[1.35] object-contain pointer-events-none" />}
                         {/* Status Dot */}
                         {!isBlocked && (
-                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#050505] rounded-full flex items-center justify-center">
+                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-[#050505] rounded-full flex items-center justify-center z-20">
                                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                             </div>
                         )}
@@ -679,147 +681,4 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
                 ) : (
                     <div className="p-6 bg-gradient-to-b from-violet-900/20 to-[#121216]">
                         <div className="flex justify-between items-start mb-4">
-                            <span className="text-[10px] font-bold text-violet-300 bg-violet-500/10 px-2 py-1 rounded-md border border-violet-500/20">USER FOUND</span>
-                            <button onClick={() => { setFoundUser(null); setSearchId(''); }} className="p-1 bg-white/10 rounded-full hover:bg-white/20"><X size={14}/></button>
-                        </div>
-                        <div className="flex items-center gap-4">
-                            <img src={foundUser.photoURL || `https://ui-avatars.com/api/?name=${foundUser.displayName}`} className="w-16 h-16 rounded-full border-4 border-[#121216] shadow-xl" />
-                            <div>
-                                <h3 className="text-xl font-bold text-white">{foundUser.displayName}</h3>
-                                <p className="text-xs text-gray-400 font-mono">ID: {foundUser.uniqueId}</p>
-                            </div>
-                        </div>
-                        <button 
-                            onClick={() => startChat(foundUser)}
-                            className="w-full mt-6 bg-white text-black font-bold py-3.5 rounded-xl hover:bg-gray-200 transition-colors flex items-center justify-center gap-2 shadow-xl active:scale-95"
-                        >
-                            <MessageSquare size={18} /> Start Chatting
-                        </button>
-                    </div>
-                )}
-              </div>
-          </div>
-      )}
-
-      {/* Recent Chats */}
-      <div className="flex-1 overflow-y-auto space-y-3 pr-1 z-10">
-         <div className="flex items-center justify-between mb-2 px-2">
-             <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Recent</h3>
-         </div>
-         
-         {loadingChats ? (
-            <div className="flex justify-center py-10"><Loader2 className="animate-spin text-violet-500" /></div>
-         ) : chats.length === 0 ? (
-            <div className="text-center py-12 opacity-40 border-2 border-dashed border-white/10 rounded-3xl m-2">
-               <MessageSquare size={32} className="text-gray-500 mx-auto mb-3" />
-               <p className="text-gray-500 text-sm font-medium">No messages yet.</p>
-            </div>
-         ) : (
-            chats.map(chat => {
-                const otherUser = getOtherUser(chat);
-                const unreadCount = chat.unreadCounts?.[currentUser.uid] || 0;
-                
-                return (
-                    <div 
-                        key={chat.id}
-                        onMouseDown={() => handleStartPress(chat.id)}
-                        onMouseUp={handleEndPress}
-                        onTouchStart={() => handleStartPress(chat.id)}
-                        onTouchEnd={handleEndPress}
-                        onClick={(e) => {
-                            if (longPressedChatId === chat.id) return;
-                            if (isLongPressRef.current) {
-                                isLongPressRef.current = false; 
-                                return;
-                            }
-                            setActiveChatUser({
-                                uid: otherUser.uid,
-                                displayName: otherUser.displayName,
-                                photoURL: otherUser.photoURL,
-                                email: '',
-                                walletBalance: 0
-                            });
-                            setActiveChatId(chat.id);
-                        }}
-                        className="group flex items-center gap-4 p-4 rounded-[1.5rem] bg-[#121216] border border-white/5 hover:border-white/10 hover:bg-[#1A1A21] transition-all cursor-pointer active:scale-[0.98] relative overflow-hidden select-none"
-                    >
-                        {/* Hover Gradient */}
-                        <div className="absolute inset-0 bg-gradient-to-r from-violet-600/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-
-                        {/* DELETE MODE OVERLAY */}
-                        {longPressedChatId === chat.id && (
-                            <div 
-                                className="absolute inset-0 z-50 bg-[#050505]/95 backdrop-blur-md flex items-center justify-center gap-3 animate-fade-in px-4 cursor-default"
-                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                                onMouseDown={(e) => { e.stopPropagation(); }}
-                                onTouchStart={(e) => { e.stopPropagation(); }}
-                                onMouseUp={(e) => { e.stopPropagation(); }}
-                                onTouchEnd={(e) => { e.stopPropagation(); }}
-                            >
-                                <button 
-                                    onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        e.preventDefault(); 
-                                        handleDeleteChat(chat.id); 
-                                    }}
-                                    className="flex-1 bg-red-600 active:bg-red-700 text-white text-xs font-bold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg touch-manipulation"
-                                >
-                                    <Trash2 size={16} /> Confirm Delete
-                                </button>
-                                <button 
-                                    onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        e.preventDefault(); 
-                                        setLongPressedChatId(null); 
-                                    }}
-                                    className="px-5 py-3 bg-white/10 active:bg-white/20 text-white text-xs font-bold rounded-xl touch-manipulation"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                        )}
-
-                        <div className="relative">
-                            <img 
-                                src={otherUser.photoURL || `https://ui-avatars.com/api/?name=${otherUser.displayName}`} 
-                                className="w-14 h-14 rounded-full bg-gray-800 object-cover ring-2 ring-[#121216] group-hover:ring-violet-500/30 transition-all" 
-                            />
-                            {/* Unread Chat Badge */}
-                            {unreadCount > 0 && (
-                                <div className="absolute -top-1 -right-1 min-w-[20px] h-[20px] bg-emerald-500 text-white text-[10px] font-extrabold flex items-center justify-center rounded-full border-4 border-[#121216] shadow-lg animate-bounce">
-                                    {unreadCount}
-                                </div>
-                            )}
-                        </div>
-                        <div className="flex-1 min-w-0 relative z-10">
-                            <div className="flex justify-between items-baseline mb-1">
-                                <h4 className={`text-sm truncate ${unreadCount > 0 ? 'font-extrabold text-white' : 'font-bold text-gray-200'}`}>{otherUser.displayName}</h4>
-                                <span className={`text-[10px] font-bold ${unreadCount > 0 ? 'text-emerald-400' : 'text-gray-600'}`}>
-                                    {new Date(chat.updatedAt).toLocaleDateString() === new Date().toLocaleDateString() 
-                                        ? new Date(chat.updatedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
-                                        : new Date(chat.updatedAt).toLocaleDateString()}
-                                </span>
-                            </div>
-                            <p className={`text-xs truncate flex items-center gap-1.5 ${unreadCount > 0 ? 'text-white font-medium' : 'text-gray-500'}`}>
-                                {unreadCount > 0 ? (
-                                    <>
-                                       <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-                                       New Message
-                                    </>
-                                ) : (
-                                    chat.lastMessage.includes('Invite') ? <Mic size={12} className="text-violet-400"/> : <Lock size={10} className="text-gray-600" />
-                                )}
-                                {unreadCount === 0 && (
-                                    chat.lastMessage === 'Encrypted Message' ? 'End-to-end encrypted' : chat.lastMessage
-                                )}
-                            </p>
-                        </div>
-                        <ChevronRight size={16} className="text-gray-600 group-hover:text-white transition-colors" />
-                    </div>
-                );
-            })
-         )}
-      </div>
-    </div>
-  );
-};
+                            <span className="text-[10px] font-bold text-violet-300 bg-violet-500/10 px-2 py-1

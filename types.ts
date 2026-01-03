@@ -14,6 +14,15 @@ export interface UserProfile {
   isBanned?: boolean; // Admin controlled ban status
   createdAt?: number; // Timestamp of account creation
   blockedUsers?: string[]; // List of UIDs blocked by this user
+  ownedFrames?: Frame[]; // Inventory of owned frames
+  frameUrl?: string; // Currently equipped frame URL
+}
+
+export interface Frame {
+  id: string;
+  url: string;
+  name: string;
+  createdAt: number;
 }
 
 export interface Room {
@@ -37,6 +46,7 @@ export interface Participant {
   uid: string;
   displayName: string;
   photoURL: string | null;
+  frameUrl?: string; // Added frameUrl
   isMuted: boolean;
   isHostMuted?: boolean; // New field for host-enforced mute
   seatIndex: number; // 999 = Host, 0-7 = Grid, -1 = Audience (Listener)
@@ -78,6 +88,7 @@ export interface ChatMetadata {
     uid: string;
     displayName: string;
     photoURL: string | null;
+    frameUrl?: string; // Added frame support in chat
   }[];
   lastMessage: string;
   lastMessageTime: number;
@@ -101,6 +112,7 @@ export interface ActiveListener {
   uid: string;
   displayName: string;
   photoURL: string | null;
+  frameUrl?: string; // Added frame
   bio: string;
   lastActive: number;
   isBusy: boolean;
