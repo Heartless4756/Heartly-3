@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { UserProfile, Room, Report, Sticker, RoomBackground, GiftItem } from '../types';
+import { UserProfile, Room, Report, Sticker, RoomBackground, GiftItem, Frame } from '../types';
 import { updateProfile } from 'firebase/auth';
 import { doc, updateDoc, increment, getDoc, arrayRemove, arrayUnion, collection, query, where, getDocs, deleteDoc, orderBy, addDoc, setDoc, limit, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -47,7 +47,8 @@ import {
   Smile,
   Image as ImageIcon,
   Gift,
-  ShoppingBag
+  ShoppingBag,
+  Frame as FrameIcon
 } from 'lucide-react';
 
 interface ProfileProps {
@@ -59,7 +60,7 @@ interface ProfileProps {
 
 const ADMIN_EMAIL = "sv116774@gmail.com";
 
-type AdminTab = 'dashboard' | 'users' | 'rooms' | 'listeners' | 'reports' | 'stickers' | 'backgrounds' | 'gifts';
+type AdminTab = 'dashboard' | 'users' | 'rooms' | 'listeners' | 'reports' | 'stickers' | 'backgrounds' | 'gifts' | 'frames';
 
 interface SettingsItemProps {
   onClick: () => void;
@@ -133,6 +134,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   const [isProcessing, setIsProcessing] = useState(false);
   const [walletTab, setWalletTab] = useState<'recharge' | 'earnings'>('recharge');
 
+  // Bag / Inventory State
+  const [showBagModal, setShowBagModal] = useState(false);
+
   // Help & Support State
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [supportTab, setSupportTab] = useState<'faq' | 'contact'>('faq');
@@ -164,6 +168,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   const [adminEditName, setAdminEditName] = useState('');
   const [adminEditBio, setAdminEditBio] = useState('');
   const [adminNotification, setAdminNotification] = useState('');
+  const [showAssignFrameModal, setShowAssignFrameModal] = useState(false);
   
   // Admin: Rooms Management
   const [adminRooms, setAdminRooms] = useState<Room[]>([]);
@@ -177,9 +182,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   // Admin: Reports
   const [adminReports, setAdminReports] = useState<Report[]>([]);
 
-  // Admin: Stickers, Gifts
+  // Admin: Stickers, Gifts, Frames
   const [adminStickers, setAdminStickers] = useState<Sticker[]>([]);
   const [adminGifts, setAdminGifts] = useState<GiftItem[]>([]);
+  const [adminFrames, setAdminFrames] = useState<Frame[]>([]);
   const [selectedStickerId, setSelectedStickerId] = useState<string | null>(null);
   
   // Gift Form
@@ -193,6 +199,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   const stickerInputRef = useRef<HTMLInputElement>(null);
   const giftIconInputRef = useRef<HTMLInputElement>(null);
   const giftAnimInputRef = useRef<HTMLInputElement>(null);
+  const frameInputRef = useRef<HTMLInputElement>(null);
 
   // Admin: Backgrounds
   const [adminBackgrounds, setAdminBackgrounds] = useState<RoomBackground[]>([]);
@@ -215,6 +222,200 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
     { q: "Can I change my username?", a: "Yes, go to your Profile and click the 'Edit' button." },
     { q: "How do I become a listener?", a: "Listener status is granted by admins. Apply by contacting support." }
   ];
+
+  // MISSING VARIABLES & FUNCTIONS
+  const isAdmin = user.email === ADMIN_EMAIL;
+  const canEditProfile = true; 
+
+  const copyId = () => {
+    if (user.uniqueId) {
+      navigator.clipboard.writeText(user.uniqueId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await uploadFileToCloudinary(file);
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, { photoURL: url });
+      setEditedPhoto(url);
+      onUpdate();
+    } catch (error) {
+      console.error("Error uploading image:", error);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!editedName.trim()) {
+        alert("Name cannot be empty");
+        return;
+    }
+    setLoading(true);
+    try {
+        const userRef = doc(db, 'users', user.uid);
+        await updateDoc(userRef, {
+            displayName: editedName,
+            bio: editedBio
+        });
+        setIsEditing(false);
+        onUpdate();
+    } catch (e) {
+        console.error("Error saving profile:", e);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleShowList = async (type: 'followers' | 'following') => {
+      setShowUserList(type);
+      setLoadingList(true);
+      const ids = type === 'followers' ? user.followers : user.following;
+      
+      if (ids && ids.length > 0) {
+          try {
+              // Fetching users in batches of 10
+              const profiles: UserProfile[] = [];
+              for (let i = 0; i < ids.length; i += 10) {
+                  const chunk = ids.slice(i, i + 10);
+                  const q = query(collection(db, 'users'), where('uid', 'in', chunk));
+                  const snapshot = await getDocs(q);
+                  snapshot.forEach(doc => profiles.push(doc.data() as UserProfile));
+              }
+              setUserList(profiles);
+          } catch (e) {
+              console.error("Error fetching list:", e);
+          }
+      } else {
+          setUserList([]);
+      }
+      setLoadingList(false);
+  };
+
+  const handleAdminImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !fetchedAdminUser) return;
+      try {
+          const url = await uploadFileToCloudinary(file);
+          const userRef = doc(db, 'users', fetchedAdminUser.uid);
+          await updateDoc(userRef, { photoURL: url });
+          setFetchedAdminUser(prev => prev ? { ...prev, photoURL: url } : null);
+          alert("User image updated.");
+      } catch (e) {
+          console.error(e);
+          alert("Update failed.");
+      }
+  };
+
+  const handleAdminSearchUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminTargetEmail) return;
+    setLoading(true);
+    try {
+        const q = query(collection(db, 'users'), where('email', '==', adminTargetEmail));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+            const data = snap.docs[0].data() as UserProfile;
+            setFetchedAdminUser(data);
+            setAdminEditName(data.displayName || '');
+            setAdminEditBio(data.bio || '');
+        } else {
+            setFetchedAdminUser(null);
+            alert("User not found");
+        }
+    } catch (e) {
+        console.error(e);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleAdminUpdateUser = async () => {
+    if (!fetchedAdminUser) return;
+    try {
+        const userRef = doc(db, 'users', fetchedAdminUser.uid);
+        await updateDoc(userRef, {
+            displayName: adminEditName || fetchedAdminUser.displayName,
+            bio: adminEditBio || fetchedAdminUser.bio
+        });
+        setFetchedAdminUser(prev => prev ? { ...prev, displayName: adminEditName, bio: adminEditBio } : null);
+        alert("User updated.");
+    } catch (e) {
+        console.error(e);
+        alert("Update failed.");
+    }
+  };
+
+  const handleAdminAddCoins = async () => {
+    if (!fetchedAdminUser || !adminCoinAmount) return;
+    const amount = parseInt(adminCoinAmount);
+    if (isNaN(amount)) return;
+    
+    try {
+        const userRef = doc(db, 'users', fetchedAdminUser.uid);
+        await updateDoc(userRef, { walletBalance: increment(amount) });
+        setFetchedAdminUser(prev => prev ? { ...prev, walletBalance: (prev.walletBalance || 0) + amount } : null);
+        setAdminCoinAmount('');
+        alert("Coins added.");
+    } catch (e) {
+        console.error(e);
+        alert("Failed.");
+    }
+  };
+
+  const renderAdminDashboard = () => (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fade-in">
+          <StatCard label="Total Users" value={stats.totalUsers} icon={Users} color="text-violet-500" />
+          <StatCard label="Active Rooms" value={stats.activeRooms} icon={Mic} color="text-emerald-500" />
+          <StatCard label="Online Listeners" value={stats.onlineListeners} icon={Headphones} color="text-cyan-500" />
+          <StatCard label="Total Coins" value={stats.totalCoins} icon={Coins} color="text-yellow-500" />
+          
+          <div className="col-span-2 bg-[#1A1A21] p-5 rounded-2xl border border-white/5 flex items-center justify-between">
+              <div>
+                  <h3 className="text-white font-bold flex items-center gap-2"><AlertTriangle size={18} className="text-orange-500"/> Maintenance Mode</h3>
+                  <p className="text-xs text-gray-500">Disable app access for non-admins</p>
+              </div>
+              <button 
+                onClick={async () => {
+                    const newValue = !maintenanceMode;
+                    await setDoc(doc(db, 'system', 'general'), { maintenanceMode: newValue }, { merge: true });
+                    setMaintenanceMode(newValue);
+                }}
+                className={`w-12 h-6 rounded-full p-1 transition-colors ${maintenanceMode ? 'bg-orange-500' : 'bg-gray-700'}`}
+              >
+                  <div className={`w-4 h-4 bg-white rounded-full transition-transform ${maintenanceMode ? 'translate-x-6' : ''}`} />
+              </button>
+          </div>
+          
+          <div className="col-span-2 bg-[#1A1A21] p-5 rounded-2xl border border-white/5">
+               <h3 className="text-white font-bold mb-2 flex items-center gap-2"><Megaphone size={16}/> System Broadcast</h3>
+               <div className="flex gap-2">
+                   <input 
+                      type="text" 
+                      value={broadcastMessage} 
+                      onChange={(e) => setBroadcastMessage(e.target.value)}
+                      placeholder="Send alert to all users..." 
+                      className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
+                   />
+                   <button 
+                      onClick={() => {
+                          alert(`Broadcast sent: ${broadcastMessage}`);
+                          setBroadcastMessage('');
+                      }}
+                      className="px-4 bg-violet-600 rounded-xl text-xs font-bold"
+                   >
+                       Send
+                   </button>
+               </div>
+          </div>
+      </div>
+  );
 
   useEffect(() => {
     setEditedName(user.displayName || '');
@@ -262,52 +463,48 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   const fetchAdminStats = async () => {
     setLoading(true);
     try {
-      // 1. Rooms
       const roomsQuery = query(collection(db, 'rooms'), orderBy('createdAt', 'desc'));
       const roomsSnap = await getDocs(roomsQuery);
       const roomsData = roomsSnap.docs.map(d => ({ ...d.data(), id: d.id } as Room));
       setAdminRooms(roomsData);
 
-      // 2. Listeners
       const listenersQuery = query(collection(db, 'users'), where('isAuthorizedListener', '==', true));
       const listenersSnap = await getDocs(listenersQuery);
       const listenersData = listenersSnap.docs.map(d => ({ ...d.data(), uid: d.id } as UserProfile));
       setAdminListeners(listenersData);
 
-      // 3. Online Listeners
       const activeListenersSnap = await getDocs(collection(db, 'activeListeners'));
 
-      // 4. Recent Users (Last 20)
       const usersQuery = query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(20));
       const usersSnap = await getDocs(usersQuery);
       const recentUsersData = usersSnap.docs.map(d => ({ ...d.data(), uid: d.id } as UserProfile));
       setRecentUsers(recentUsersData);
 
-      // 5. Reports
       const reportsQuery = query(collection(db, 'reports'), orderBy('timestamp', 'desc'));
       const reportsSnap = await getDocs(reportsQuery);
       const reportsData = reportsSnap.docs.map(d => ({ ...d.data(), id: d.id } as Report));
       setAdminReports(reportsData);
 
-      // 6. Stickers
       const stickersQuery = query(collection(db, 'stickers'), orderBy('createdAt', 'desc'));
       const stickersSnap = await getDocs(stickersQuery);
       const stickersData = stickersSnap.docs.map(d => ({ ...d.data(), id: d.id } as Sticker));
       setAdminStickers(stickersData);
 
-      // 7. Gifts
       const giftsQuery = query(collection(db, 'gifts'), orderBy('price', 'asc'));
       const giftsSnap = await getDocs(giftsQuery);
       const giftsData = giftsSnap.docs.map(d => ({ ...d.data(), id: d.id } as GiftItem));
       setAdminGifts(giftsData);
 
-      // 8. Backgrounds
       const bgQuery = query(collection(db, 'roomBackgrounds'), orderBy('createdAt', 'desc'));
       const bgSnap = await getDocs(bgQuery);
       const bgData = bgSnap.docs.map(d => ({ ...d.data(), id: d.id } as RoomBackground));
       setAdminBackgrounds(bgData);
+      
+      const framesQuery = query(collection(db, 'frames'), orderBy('createdAt', 'desc'));
+      const framesSnap = await getDocs(framesQuery);
+      const framesData = framesSnap.docs.map(d => ({ ...d.data(), id: d.id } as Frame));
+      setAdminFrames(framesData);
 
-      // 9. System Config
       const sysDoc = await getDoc(doc(db, 'system', 'general'));
       if (sysDoc.exists()) {
           setMaintenanceMode(sysDoc.data().maintenanceMode || false);
@@ -332,7 +529,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       const formData = new FormData();
       formData.append('file', file);
       formData.append('upload_preset', 'Heartly image');
-      // Use raw for SVGA, image for PNG/JPG
       const resourceType = file.name.endsWith('.svga') ? 'raw' : 'image';
       const response = await fetch(`https://api.cloudinary.com/v1_1/dtxvdtt78/${resourceType}/upload`, { method: 'POST', body: formData });
       const data = await response.json();
@@ -345,670 +541,85 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       setLoading(true);
       try {
           const url = await uploadFileToCloudinary(file);
-          await addDoc(collection(db, 'stickers'), {
-              url: url,
-              name: file.name,
-              createdAt: Date.now()
-          });
-          
+          await addDoc(collection(db, 'stickers'), { url, name: file.name, createdAt: Date.now() });
           alert("Sticker added!");
           fetchAdminStats();
-      } catch (e) { console.error(e); alert("Failed to upload sticker"); } finally { setLoading(false); }
+      } catch (e) { console.error(e); alert("Failed"); } finally { setLoading(false); }
   };
-
-  const handleGiftIconUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      setGiftIconUploading(true);
-      try {
-          const url = await uploadFileToCloudinary(file);
-          setTempGiftIcon(url);
-      } catch (e) { console.error(e); alert("Failed"); } finally { setGiftIconUploading(false); }
-  };
-
-  const handleGiftAnimUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      setGiftAnimUploading(true);
-      try {
-          const url = await uploadFileToCloudinary(file);
-          setTempGiftAnim(url);
-      } catch (e) { console.error(e); alert("Failed"); } finally { setGiftAnimUploading(false); }
-  };
-
-  const handleCreateGift = async () => {
-      if (!newGiftName || !newGiftPrice || !tempGiftIcon) {
-          alert("Name, Price and Icon are required.");
-          return;
-      }
-      setLoading(true);
-      try {
-          await addDoc(collection(db, 'gifts'), {
-              name: newGiftName,
-              price: newGiftPrice,
-              iconUrl: tempGiftIcon,
-              animationUrl: tempGiftAnim || null,
-              createdAt: Date.now()
-          });
-          alert("Gift Created!");
-          setNewGiftName('');
-          setNewGiftPrice(10);
-          setTempGiftIcon('');
-          setTempGiftAnim('');
-          fetchAdminStats();
-      } catch(e) { console.error(e); } finally { setLoading(false); }
-  };
-
-  const handleDeleteGift = async (e: React.MouseEvent, id: string) => {
-      e.stopPropagation();
-      if(!window.confirm("Delete gift?")) return;
-      try {
-          await deleteDoc(doc(db, 'gifts', id));
-          setAdminGifts(prev => prev.filter(g => g.id !== id));
-      } catch(e) { console.error(e); }
-  };
-
-  const handleBackgroundUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  
+  const handleFrameUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
       setLoading(true);
       try {
           const url = await uploadFileToCloudinary(file);
-          await addDoc(collection(db, 'roomBackgrounds'), {
-              url: url,
-              name: file.name,
-              createdAt: Date.now()
-          });
-          alert("Background added!");
+          await addDoc(collection(db, 'frames'), { url, name: file.name.split('.')[0], createdAt: Date.now() });
+          alert("Frame added!");
           fetchAdminStats();
-      } catch (e) { console.error(e); alert("Failed to upload background"); } finally { setLoading(false); }
+      } catch (e) { console.error(e); alert("Failed to upload frame"); } finally { setLoading(false); }
   };
 
-  const handleDeleteSticker = async (e: React.MouseEvent, stickerId: string) => {
+  const handleDeleteFrame = async (e: React.MouseEvent, frameId: string) => {
       e.stopPropagation();
-      if(!window.confirm("Permanently delete this sticker?")) return;
+      if(!window.confirm("Permanently delete this frame?")) return;
       try {
-          await deleteDoc(doc(db, 'stickers', stickerId));
-          setAdminStickers(prev => prev.filter(s => s.id !== stickerId));
-          if (selectedStickerId === stickerId) setSelectedStickerId(null);
-      } catch(e) { console.error("Error deleting sticker", e); }
+          await deleteDoc(doc(db, 'frames', frameId));
+          setAdminFrames(prev => prev.filter(f => f.id !== frameId));
+      } catch(e) { console.error(e); }
   };
 
-  const handleDeleteBackground = async (bgId: string) => {
-      if(!window.confirm("Permanently delete this background?")) return;
-      try {
-          await deleteDoc(doc(db, 'roomBackgrounds', bgId));
-          setAdminBackgrounds(prev => prev.filter(b => b.id !== bgId));
-      } catch(e) { console.error("Error deleting background", e); }
-  };
-
-  const adminCreateRoom = async () => {
-      const inputId = adminNewRoomOwnerId.trim();
-      if (!adminNewRoomName.trim() || !inputId) {
-          alert("Please fill in Room Name and Owner ID/Unique ID.");
-          return;
-      }
+  const handleAssignFrame = async (frame: Frame) => {
+      if (!fetchedAdminUser) return;
       setLoading(true);
       try {
-          let targetUid = inputId;
-          let userData: any = null;
-
-          const userDocRef = doc(db, 'users', inputId);
-          const userSnap = await getDoc(userDocRef);
-
-          if (userSnap.exists()) {
-              userData = userSnap.data();
-              targetUid = userSnap.id;
-          } else {
-              const q = query(collection(db, 'users'), where('uniqueId', '==', inputId.toUpperCase()));
-              const querySnap = await getDocs(q);
-              
-              if (!querySnap.empty) {
-                  const doc = querySnap.docs[0];
-                  userData = doc.data();
-                  targetUid = doc.id;
-              }
-          }
-
-          if (!userData) {
-              alert("User not found! Please check the ID.");
-              setLoading(false);
-              return;
-          }
-
-          await addDoc(collection(db, 'rooms'), {
-              name: adminNewRoomName,
-              createdBy: targetUid,
-              creatorName: userData.displayName || 'User',
-              createdAt: Date.now(),
-              participants: [],
-              lockedSeats: [],
-              active: false,
-              admins: [],
-              password: '',
-              backgroundImage: '',
-              kickedUsers: {}
+          const userRef = doc(db, 'users', fetchedAdminUser.uid);
+          await updateDoc(userRef, {
+              ownedFrames: arrayUnion(frame)
           });
-
-          setAdminNewRoomName('');
-          setAdminNewRoomOwnerId('');
-          setShowAdminCreateRoom(false);
-          alert(`Room assigned to ${userData.displayName} (ID: ${userData.uniqueId})`);
-          fetchAdminStats(); 
-      } catch (e: any) {
-          alert("Failed: " + e.message);
-      } finally {
-          setLoading(false);
-      }
+          alert(`Assigned ${frame.name} to ${fetchedAdminUser.displayName}`);
+          setShowAssignFrameModal(false);
+      } catch (e) { console.error(e); alert("Failed to assign"); } finally { setLoading(false); }
   };
 
-  const handleDeleteRoomClick = async (e: React.MouseEvent, roomId: string) => {
-    e.stopPropagation();
-    if(!window.confirm("PERMANENTLY delete this room?")) return;
-    setAdminRooms(prev => prev.filter(r => r.id !== roomId));
-    try {
-      await deleteDoc(doc(db, 'rooms', roomId));
-    } catch (e: any) {
-      alert(`Failed: ${e.message}`);
-      fetchAdminStats();
-    }
-  };
-
-  const handleUnlockRoom = async (e: React.MouseEvent, roomId: string) => {
-      e.stopPropagation();
-      try {
-          await updateDoc(doc(db, 'rooms', roomId), { password: "" });
-          alert("Room Unlocked!");
-          fetchAdminStats();
-      } catch (e) { console.error(e); }
-  };
-
-  const handleRevokeListenerClick = async (e: React.MouseEvent, uid: string) => {
-    e.stopPropagation();
-    if(!window.confirm("Revoke listener status?")) return;
-    setAdminListeners(prev => prev.filter(u => u.uid !== uid));
-    try {
-      await updateDoc(doc(db, 'users', uid), { isAuthorizedListener: false });
-    } catch (e) { console.error(e); }
-  };
-
-  const handleResolveReport = async (reportId: string) => {
-      try {
-          await updateDoc(doc(db, 'reports', reportId), { status: 'resolved' });
-          setAdminReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'resolved' } : r));
-      } catch(e) { console.error(e); }
-  };
-
-  const handleDeleteReport = async (reportId: string) => {
-      if(!window.confirm("Delete this report log?")) return;
-      try {
-          await deleteDoc(doc(db, 'reports', reportId));
-          setAdminReports(prev => prev.filter(r => r.id !== reportId));
-      } catch(e) { console.error(e); }
-  };
-
-  const sendGlobalAlert = async () => {
-    if (!broadcastMessage.trim()) return;
-    setLoading(true);
-    try {
-        const q = query(collection(db, 'rooms'), where('active', '==', true));
-        const snapshot = await getDocs(q);
-        if (snapshot.empty) { alert("No active rooms."); return; }
-        const promises = snapshot.docs.map(roomDoc => 
-            addDoc(collection(db, 'rooms', roomDoc.id, 'messages'), {
-                text: `📢 SYSTEM: ${broadcastMessage}`,
-                senderId: 'system',
-                senderName: 'System',
-                createdAt: Date.now(),
-                type: 'system'
-            })
-        );
-        await Promise.all(promises);
-        setBroadcastMessage('');
-        alert("Broadcast sent.");
-    } catch (e) { alert("Broadcast failed."); } finally { setLoading(false); }
-  };
-
-  const toggleMaintenanceMode = async () => {
-      const newState = !maintenanceMode;
-      if (newState && !window.confirm("Enable Maintenance Mode? Users might experience issues.")) return;
-      setMaintenanceMode(newState);
-      await setDoc(doc(db, 'system', 'general'), { maintenanceMode: newState }, { merge: true });
-  };
-
-  const handleSave = async () => {
-    setLoading(true);
-    try {
-      if (auth.currentUser) {
-        await updateProfile(auth.currentUser, { displayName: editedName, photoURL: editedPhoto });
-      }
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, { displayName: editedName, photoURL: editedPhoto, bio: editedBio, updatedAt: Date.now() });
-      onUpdate();
-      setIsEditing(false);
-    } catch (error) { console.error(error); } finally { setLoading(false); }
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-        const url = await uploadFileToCloudinary(file);
-        setEditedPhoto(url);
-    } catch (error) { console.error(error); alert("Upload failed."); } finally { setUploading(false); }
-  };
-
-  const handleAdminImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !fetchedAdminUser) return;
-    setLoading(true);
-    try {
-        const url = await uploadFileToCloudinary(file);
-        const userRef = doc(db, 'users', fetchedAdminUser.uid);
-        await updateDoc(userRef, { photoURL: url, updatedAt: Date.now() });
-        setFetchedAdminUser(prev => prev ? { ...prev, photoURL: url } : null);
-        alert("Profile picture updated.");
-    } catch (error) { console.error(error); } finally { setLoading(false); }
-  };
-
-  // --- RAZORPAY INTEGRATION ---
-  const handleRecharge = async () => {
-      setIsProcessing(true);
-      
-      // 1. Load Razorpay SDK
-      const res = await loadRazorpay();
-      if (!res) {
-          alert('Razorpay SDK failed to load. Check connection.');
-          setIsProcessing(false);
-          return;
-      }
-
-      try {
-          // 2. Call our Vercel API to create Order
-          const response = await fetch('/api/create-order', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ amount: rechargeAmount })
-          });
-          const order = await response.json();
-
-          if (!order.id) {
-             throw new Error(order.error || "Order creation failed");
-          }
-
-          // 3. Open Razorpay Modal
-          const options = {
-              key: order.key, // Use the key returned from the backend
-              amount: order.amount,
-              currency: order.currency,
-              name: "Heartly Voice",
-              description: "Wallet Recharge",
-              order_id: order.id,
-              handler: async function (response: any) {
-                  // 4. Verify Payment on Backend
-                  const verifyRes = await fetch('/api/verify-payment', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                          razorpay_order_id: response.razorpay_order_id,
-                          razorpay_payment_id: response.razorpay_payment_id,
-                          razorpay_signature: response.razorpay_signature,
-                          userId: user.uid,
-                          amount: rechargeAmount
-                      })
-                  });
-
-                  const verifyData = await verifyRes.json();
-                  if (verifyData.success) {
-                      alert('Payment Successful! Coins added.');
-                      setShowRechargeModal(false);
-                      onUpdate(); // Refresh profile
-                  } else {
-                      alert('Payment verification failed.');
-                  }
-                  setIsProcessing(false);
-              },
-              prefill: {
-                  name: user.displayName || 'User',
-                  email: user.email || 'user@example.com',
-                  contact: '9999999999'
-              },
-              theme: {
-                  color: "#7C3AED" // Violet color matches app
-              }
-          };
-
-          const rzp = new (window as any).Razorpay(options);
-          rzp.on('payment.failed', function (response: any) {
-              alert("Payment Failed: " + response.error.description);
-              setIsProcessing(false);
-          });
-          rzp.open();
-
-      } catch (e: any) { 
-          console.error(e); 
-          alert("Error: " + (e.message || "Something went wrong")); 
-          setIsProcessing(false); 
-      }
-  };
-
-  const handleWithdraw = async () => {
-      const balance = user.commissionBalance || 0;
-      if (balance < 100) { alert("Min withdrawal 100."); return; }
-      setIsProcessing(true);
-      await new Promise(resolve => setTimeout(resolve, 1500));
+  const handleEquipFrame = async (frame: Frame) => {
       try {
           const userRef = doc(db, 'users', user.uid);
-          await updateDoc(userRef, { commissionBalance: 0 });
-          alert("Request submitted!");
-          setIsProcessing(false);
-          setShowRechargeModal(false);
-      } catch(e) { setIsProcessing(false); }
+          await updateDoc(userRef, { frameUrl: frame.url });
+          onUpdate();
+          setShowBagModal(false);
+      } catch (e) { console.error(e); }
   };
 
-  const handleSendSupport = async () => {
-    if(!supportMessage.trim()) return;
-    setSendingSupport(true);
-    try {
-        await addDoc(collection(db, 'supportTickets'), { uid: user.uid, email: user.email, message: supportMessage, createdAt: Date.now(), status: 'open' });
-        alert("Support request sent! We will get back to you shortly.");
-        setSupportMessage('');
-        setShowHelpModal(false);
-    } catch(e) { console.error(e); alert("Failed to send message."); } finally { setSendingSupport(false); }
-  };
-
-  const handleUnblock = async (blockedUid: string) => {
-      if (!window.confirm("Unblock this user?")) return;
+  const handleUnequipFrame = async () => {
       try {
           const userRef = doc(db, 'users', user.uid);
-          await updateDoc(userRef, { blockedUsers: arrayRemove(blockedUid) });
-          setBlockedProfiles(prev => prev.filter(p => p.uid !== blockedUid));
-          alert("User unblocked.");
+          await updateDoc(userRef, { frameUrl: null });
+          onUpdate();
+          setShowBagModal(false);
       } catch (e) { console.error(e); }
   };
 
-  const handleDeleteAccount = () => {
-      const confirmation = prompt("Type 'DELETE' to confirm account deletion. This action is irreversible.");
-      if (confirmation === 'DELETE') {
-          alert("Account deletion request submitted. Support will process this within 24 hours.");
-          setShowPrivacyModal(false);
-      }
-  };
-
-  const copyId = () => {
-      if (user.uniqueId) {
-          navigator.clipboard.writeText(user.uniqueId);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
-      }
-  };
-
-  const handleShowList = async (type: 'followers' | 'following') => {
-      setShowUserList(type);
-      setLoadingList(true);
-      const uids = type === 'followers' ? user.followers : user.following;
-      if (!uids || uids.length === 0) { setUserList([]); setLoadingList(false); return; }
-      try {
-          const fetchedUsers: UserProfile[] = [];
-          for (const uid of uids) {
-              const snap = await getDoc(doc(db, 'users', uid));
-              if (snap.exists()) fetchedUsers.push(snap.data() as UserProfile);
-          }
-          setUserList(fetchedUsers);
-      } catch (e) { console.error(e); } finally { setLoadingList(false); }
-  };
-
-  const toggleFollowVisitor = async () => {
-      if (!visitingProfile) return;
-      const myRef = doc(db, 'users', user.uid);
-      const targetRef = doc(db, 'users', visitingProfile.uid);
-      try {
-          if (isFollowingVisitor) {
-              await updateDoc(myRef, { following: arrayRemove(visitingProfile.uid) });
-              await updateDoc(targetRef, { followers: arrayRemove(user.uid) });
-              setIsFollowingVisitor(false);
-          } else {
-              await updateDoc(myRef, { following: arrayUnion(visitingProfile.uid) });
-              await updateDoc(targetRef, { followers: arrayUnion(user.uid) });
-              setIsFollowingVisitor(true);
-          }
-          onUpdate(); 
-      } catch (e) { console.error(e); }
-  };
-
-  const searchAdminUser = async () => {
-      if (!adminTargetEmail) return;
-      setLoading(true);
-      setFetchedAdminUser(null);
-      try {
-          let q = query(collection(db, 'users'), where('email', '==', adminTargetEmail));
-          let snap = await getDocs(q);
-          if (snap.empty) {
-              q = query(collection(db, 'users'), where('uniqueId', '==', adminTargetEmail.toUpperCase()));
-              snap = await getDocs(q);
-          }
-          if (!snap.empty) {
-              const userData = snap.docs[0].data() as UserProfile;
-              setFetchedAdminUser(userData);
-              setAdminEditName(userData.displayName || '');
-              setAdminEditBio(userData.bio || '');
-          } else { alert("User not found."); }
-      } catch (e) { console.error(e); } finally { setLoading(false); }
-  };
-
-  const toggleListener = async () => {
-      if (!fetchedAdminUser) return;
-      setLoading(true);
-      try {
-          const newState = !fetchedAdminUser.isAuthorizedListener;
-          await updateDoc(doc(db, 'users', fetchedAdminUser.uid), { isAuthorizedListener: newState });
-          setFetchedAdminUser({ ...fetchedAdminUser, isAuthorizedListener: newState });
-      } catch (e) { console.error(e); } finally { setLoading(false); }
-  };
-
-  const toggleBan = async () => {
-      if (!fetchedAdminUser) return;
-      const newState = !fetchedAdminUser.isBanned;
-      if (newState && !window.confirm("BAN this user?")) return;
-      setLoading(true);
-      try {
-          await updateDoc(doc(db, 'users', fetchedAdminUser.uid), { isBanned: newState });
-          setFetchedAdminUser(prev => prev ? { ...prev, isBanned: newState } : null);
-          alert(newState ? "User BANNED." : "User UNBANNED.");
-      } catch (e) { console.error(e); } finally { setLoading(false); }
-  };
-
-  const saveTargetProfile = async () => {
-      if (!fetchedAdminUser) return;
-      setLoading(true);
-      try {
-          await updateDoc(doc(db, 'users', fetchedAdminUser.uid), { displayName: adminEditName, bio: adminEditBio });
-          setFetchedAdminUser(prev => prev ? { ...prev, displayName: adminEditName, bio: adminEditBio } : null);
-          alert("Updated.");
-      } catch (e) { console.error(e); } finally { setLoading(false); }
-  };
-
-  const sendNotification = async () => {
-      if (!fetchedAdminUser || !adminNotification.trim()) return;
-      setLoading(true);
-      try {
-         const chatId = `system_${fetchedAdminUser.uid}`;
-         await setDoc(doc(db, 'chats', chatId), { id: chatId, participants: ['system', fetchedAdminUser.uid], participantDetails: [{uid: 'system', displayName: 'System', photoURL: null}], lastMessage: 'System Notification', lastMessageTime: Date.now(), updatedAt: Date.now(), unreadCounts: {[fetchedAdminUser.uid]: 1} }, {merge: true});
-         await addDoc(collection(db, 'chats', chatId, 'messages'), { text: adminNotification, senderId: 'system', createdAt: Date.now(), read: false, type: 'text' });
-         alert("Notification sent!");
-         setAdminNotification('');
-      } catch(e) { console.error(e); } finally { setLoading(false); }
-  };
-
-  const manageCoins = async (action: 'add' | 'remove') => {
-      if (!fetchedAdminUser || !adminCoinAmount) return;
-      const amt = parseInt(adminCoinAmount);
-      if (isNaN(amt) || amt <= 0) return;
-      setLoading(true);
-      try {
-          const finalAmt = action === 'add' ? amt : -amt;
-          await updateDoc(doc(db, 'users', fetchedAdminUser.uid), { walletBalance: increment(finalAmt) });
-          setFetchedAdminUser({ ...fetchedAdminUser, walletBalance: (fetchedAdminUser.walletBalance || 0) + finalAmt });
-          setAdminCoinAmount('');
-          alert("Balance Updated!");
-      } catch (e) { console.error(e); } finally { setLoading(false); }
-  };
-
-  const isAdmin = user.email === ADMIN_EMAIL;
-  const canEditProfile = !user.isAuthorizedListener || isAdmin;
-
-  const renderAdminDashboard = () => (
-      <div className="h-full flex flex-col animate-fade-in">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-              <StatCard label="Total Users" value={stats.totalUsers} icon={Users} color="text-violet-400" />
-              <StatCard label="Active Rooms" value={stats.activeRooms} icon={Mic} color="text-fuchsia-400" />
-              <StatCard label="Online Listeners" value={stats.onlineListeners} icon={Headphones} color="text-emerald-400" />
-              <StatCard label="Total Economy" value={stats.totalCoins} icon={Coins} color="text-yellow-400" />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-[#121216] border border-white/10 p-6 rounded-2xl">
-                  <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Megaphone size={20} /> System Broadcast</h3>
-                  <textarea 
-                    value={broadcastMessage}
-                    onChange={(e) => setBroadcastMessage(e.target.value)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm text-white mb-4 resize-none h-32 focus:border-violet-500 outline-none"
-                    placeholder="Send a global announcement..."
-                  />
-                  <button onClick={sendGlobalAlert} disabled={loading} className="w-full py-3 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 disabled:opacity-50">
-                      Send Alert
-                  </button>
-              </div>
-
-              <div className="bg-[#121216] border border-white/10 p-6 rounded-2xl">
-                  <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><ShieldAlert size={20} /> System Controls</h3>
-                  <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/5">
-                      <div>
-                          <p className="font-bold text-white">Maintenance Mode</p>
-                          <p className="text-xs text-gray-400">Lock app for all users</p>
-                      </div>
-                      <button 
-                        onClick={toggleMaintenanceMode}
-                        className={`w-12 h-6 rounded-full p-1 transition-colors ${maintenanceMode ? 'bg-red-500' : 'bg-gray-600'}`}
-                      >
-                          <div className={`w-4 h-4 bg-white rounded-full transition-transform ${maintenanceMode ? 'translate-x-6' : 'translate-x-0'}`}></div>
-                      </button>
-                  </div>
-              </div>
-          </div>
-      </div>
-  );
-
-  const renderAdminRooms = () => (
+  const renderAdminFrames = () => (
       <div className="h-full flex flex-col animate-fade-in">
            <div className="flex justify-between items-center mb-6">
-               <h2 className="text-xl font-bold text-white">Room Management</h2>
-               <button onClick={() => setShowAdminCreateRoom(!showAdminCreateRoom)} className="px-4 py-2 bg-white text-black rounded-xl font-bold text-sm hover:bg-gray-200">
-                   {showAdminCreateRoom ? 'Cancel' : 'Assign Room'}
-               </button>
-           </div>
-
-           {showAdminCreateRoom && (
-               <div className="bg-[#121216] border border-white/10 p-6 rounded-2xl mb-6 animate-fade-in">
-                   <h3 className="font-bold text-white mb-4">Assign New Room</h3>
-                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                       <input type="text" value={adminNewRoomName} onChange={(e) => setAdminNewRoomName(e.target.value)} placeholder="Room Name" className="bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-sm" />
-                       <input type="text" value={adminNewRoomOwnerId} onChange={(e) => setAdminNewRoomOwnerId(e.target.value)} placeholder="Owner Unique ID or UID" className="bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-sm" />
-                   </div>
-                   <button onClick={adminCreateRoom} disabled={loading} className="px-6 py-3 bg-green-500 text-black font-bold rounded-xl hover:bg-green-400 disabled:opacity-50">Create Assignment</button>
-               </div>
-           )}
-
-           <div className="flex-1 overflow-y-auto space-y-3">
-               {adminRooms.map(room => (
-                   <div key={room.id} className="flex items-center justify-between p-4 bg-[#121216] border border-white/5 rounded-2xl">
-                       <div className="flex items-center gap-4">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${room.active ? 'bg-green-500/10 text-green-500' : 'bg-gray-800 text-gray-500'}`}>
-                                <Mic size={20} />
-                            </div>
-                            <div>
-                                <h4 className="font-bold text-white">{room.name}</h4>
-                                <p className="text-xs text-gray-500">ID: {room.id} • Owner: {room.creatorName}</p>
-                            </div>
-                       </div>
-                       <div className="flex gap-2">
-                           {room.password && (
-                               <button onClick={(e) => handleUnlockRoom(e, room.id)} className="p-2 bg-yellow-500/10 text-yellow-500 rounded-lg hover:bg-yellow-500/20" title="Remove Password">
-                                   <Unlock size={16} />
-                               </button>
-                           )}
-                           <button onClick={(e) => handleDeleteRoomClick(e, room.id)} className="p-2 bg-red-500/10 text-red-500 rounded-lg hover:bg-red-500/20" title="Delete Room">
-                               <Trash2 size={16} />
-                           </button>
-                       </div>
-                   </div>
-               ))}
-           </div>
-      </div>
-  );
-
-  const renderAdminListeners = () => (
-      <div className="h-full flex flex-col animate-fade-in">
-           <h2 className="text-xl font-bold text-white mb-6">Authorized Listeners</h2>
-           <div className="flex-1 overflow-y-auto space-y-3">
-               {adminListeners.map(l => (
-                   <div key={l.uid} className="flex items-center justify-between p-4 bg-[#121216] border border-white/5 rounded-2xl">
-                       <div className="flex items-center gap-4">
-                           <img src={l.photoURL || ''} className="w-10 h-10 rounded-full bg-gray-800 object-cover" />
-                           <div>
-                               <h4 className="font-bold text-white flex items-center gap-2">{l.displayName} <ShieldCheck size={14} className="text-emerald-500"/></h4>
-                               <p className="text-xs text-gray-500">{l.email}</p>
-                           </div>
-                       </div>
-                       <button onClick={(e) => handleRevokeListenerClick(e, l.uid)} className="px-4 py-2 bg-red-500/10 text-red-500 rounded-xl text-xs font-bold hover:bg-red-500/20">
-                           Revoke
-                       </button>
-                   </div>
-               ))}
-           </div>
-      </div>
-  );
-
-  const renderAdminReports = () => (
-      <div className="h-full flex flex-col animate-fade-in">
-          <h2 className="text-xl font-bold text-white mb-6">Reports & Flags</h2>
-          <div className="flex-1 overflow-y-auto space-y-3">
-               {adminReports.length === 0 ? <p className="text-gray-500 text-center py-10">No pending reports.</p> : adminReports.map(report => (
-                   <div key={report.id} className="bg-[#121216] border border-white/5 p-4 rounded-2xl">
-                       <div className="flex justify-between items-start mb-2">
-                           <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${report.status === 'pending' ? 'bg-red-500 text-white' : 'bg-green-500 text-white'}`}>{report.status}</span>
-                           <span className="text-xs text-gray-500">{new Date(report.timestamp).toLocaleDateString()}</span>
-                       </div>
-                       <p className="text-sm text-gray-300 mb-2"><span className="text-white font-bold">{report.reporterName}</span> reported <span className="text-white font-bold">{report.targetName}</span></p>
-                       <p className="bg-black/30 p-3 rounded-lg text-xs text-gray-400 mb-4 border border-white/5">"{report.reason}"</p>
-                       <div className="flex gap-2">
-                           {report.status === 'pending' && <button onClick={() => handleResolveReport(report.id)} className="px-4 py-2 bg-green-500/10 text-green-500 rounded-lg text-xs font-bold hover:bg-green-500/20">Mark Resolved</button>}
-                           <button onClick={() => handleDeleteReport(report.id)} className="px-4 py-2 bg-red-500/10 text-red-500 rounded-lg text-xs font-bold hover:bg-red-500/20">Delete Log</button>
-                       </div>
-                   </div>
-               ))}
-          </div>
-      </div>
-  );
-
-  const renderAdminStickers = () => (
-      <div className="h-full flex flex-col animate-fade-in">
-           <div className="flex justify-between items-center mb-6">
-               <h2 className="text-xl font-bold text-white">Sticker Gallery</h2>
+               <h2 className="text-xl font-bold text-white">Avatar Frames</h2>
                <div className="flex gap-2">
-                   <input type="file" ref={stickerInputRef} className="hidden" accept="image/png, image/webp, image/gif" onChange={handleStickerUpload} />
-                   <button onClick={() => stickerInputRef.current?.click()} disabled={loading} className="px-4 py-2 bg-white text-black rounded-xl hover:bg-gray-200 text-xs font-bold flex items-center gap-2">
-                       {loading ? <Loader2 size={16} className="animate-spin"/> : <Plus size={16}/>} Upload Sticker
+                   <input type="file" ref={frameInputRef} className="hidden" accept="image/png, image/webp, image/gif" onChange={handleFrameUpload} />
+                   <button onClick={() => frameInputRef.current?.click()} disabled={loading} className="px-4 py-2 bg-white text-black rounded-xl hover:bg-gray-200 text-xs font-bold flex items-center gap-2">
+                       {loading ? <Loader2 size={16} className="animate-spin"/> : <Plus size={16}/>} Upload Frame
                    </button>
                </div>
            </div>
 
-           <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4 overflow-y-auto pb-4">
-               {adminStickers.map(sticker => (
-                   <div key={sticker.id} className="relative group bg-[#1A1A21] rounded-xl p-2 border border-white/5 flex items-center justify-center aspect-square">
-                       <img src={sticker.url} className="w-12 h-12 object-contain" />
-                       <button onClick={(e) => handleDeleteSticker(e, sticker.id)} className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity transform scale-75">
+           <div className="grid grid-cols-3 md:grid-cols-5 gap-4 overflow-y-auto pb-4">
+               {adminFrames.map(frame => (
+                   <div key={frame.id} className="relative group bg-[#1A1A21] rounded-xl p-4 border border-white/5 flex flex-col items-center">
+                       <div className="relative w-20 h-20 mb-2">
+                           <div className="absolute inset-2 bg-gray-700 rounded-full opacity-50"></div>
+                           <img src={frame.url} className="absolute inset-0 w-full h-full object-contain z-10" />
+                       </div>
+                       <p className="text-xs font-bold text-white truncate w-full text-center">{frame.name}</p>
+                       <button onClick={(e) => handleDeleteFrame(e, frame.id)} className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity transform scale-75">
                            <X size={12}/>
                        </button>
                    </div>
@@ -1017,92 +628,19 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       </div>
   );
 
-  const renderAdminGifts = () => (
-      <div className="h-full flex flex-col animate-fade-in">
-           <h2 className="text-xl font-bold text-white mb-6">Gift Store Management</h2>
-           
-           <div className="bg-[#121216] border border-white/10 p-5 rounded-2xl mb-6">
-               <h3 className="text-sm font-bold text-white mb-4">Create New Gift</h3>
-               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
-                   <div>
-                       <label className="text-[10px] text-gray-500 font-bold uppercase mb-1 block">Gift Name</label>
-                       <input type="text" value={newGiftName} onChange={(e) => setNewGiftName(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white text-xs" />
-                   </div>
-                   <div>
-                       <label className="text-[10px] text-gray-500 font-bold uppercase mb-1 block">Price (Coins)</label>
-                       <input type="number" value={newGiftPrice} onChange={(e) => setNewGiftPrice(parseInt(e.target.value))} className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white text-xs" />
-                   </div>
-                   <div>
-                       <label className="text-[10px] text-gray-500 font-bold uppercase mb-1 block">Icon (PNG)</label>
-                       <input type="file" ref={giftIconInputRef} className="hidden" accept="image/*" onChange={handleGiftIconUpload} />
-                       <button onClick={() => giftIconInputRef.current?.click()} className={`w-full py-2 border border-dashed rounded-lg text-xs font-bold ${tempGiftIcon ? 'border-green-500 text-green-500 bg-green-500/10' : 'border-white/20 text-gray-400 hover:text-white'}`}>
-                           {giftIconUploading ? <Loader2 className="animate-spin mx-auto" size={14}/> : tempGiftIcon ? "Icon Ready" : "Upload Icon"}
-                       </button>
-                   </div>
-                   <div>
-                       <label className="text-[10px] text-gray-500 font-bold uppercase mb-1 block">Animation (SVGA)</label>
-                       <input type="file" ref={giftAnimInputRef} className="hidden" onChange={handleGiftAnimUpload} />
-                       <button onClick={() => giftAnimInputRef.current?.click()} className={`w-full py-2 border border-dashed rounded-lg text-xs font-bold ${tempGiftAnim ? 'border-violet-500 text-violet-500 bg-violet-500/10' : 'border-white/20 text-gray-400 hover:text-white'}`}>
-                           {giftAnimUploading ? <Loader2 className="animate-spin mx-auto" size={14}/> : tempGiftAnim ? "Anim Ready" : "Upload SVGA"}
-                       </button>
-                   </div>
-               </div>
-               <button onClick={handleCreateGift} disabled={loading} className="w-full mt-4 py-3 bg-white text-black font-bold rounded-xl text-xs hover:bg-gray-200">Add to Store</button>
-           </div>
-
-           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 overflow-y-auto pb-4">
-               {adminGifts.map(gift => (
-                   <div key={gift.id} className="relative group bg-[#1A1A21] rounded-xl p-4 border border-white/5 flex flex-col items-center">
-                       <img src={gift.iconUrl} className="w-12 h-12 object-contain mb-2" />
-                       <p className="text-xs font-bold text-white">{gift.name}</p>
-                       <p className="text-[10px] text-yellow-500 font-bold">{gift.price} Coins</p>
-                       <button onClick={(e) => handleDeleteGift(e, gift.id)} className="absolute top-2 right-2 p-1.5 bg-red-500/20 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-colors opacity-0 group-hover:opacity-100">
-                           <Trash2 size={12}/>
-                       </button>
-                   </div>
-               ))}
-           </div>
-      </div>
-  );
-
-  const renderAdminBackgrounds = () => (
-      <div className="h-full flex flex-col animate-fade-in">
-          <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-              <h2 className="text-xl font-bold text-white">Backgrounds Gallery</h2>
-              <div className="flex gap-2">
-                  <input type="file" ref={backgroundInputRef} className="hidden" accept="image/*" onChange={handleBackgroundUpload} />
-                  <button onClick={() => backgroundInputRef.current?.click()} disabled={loading} className="px-4 py-2 bg-white text-black rounded-xl hover:bg-gray-200 text-xs font-bold flex items-center gap-2">
-                      {loading ? <Loader2 size={16} className="animate-spin"/> : <Plus size={16}/>} New Image
-                  </button>
-              </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 overflow-y-auto pb-4">
-              {adminBackgrounds.map(bg => (
-                  <div key={bg.id} className="group relative bg-[#1A1A21] rounded-2xl border border-white/5 overflow-hidden aspect-video shadow-lg hover:shadow-2xl transition-all">
-                      <img src={bg.url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <button onClick={() => handleDeleteBackground(bg.id)} className="p-3 bg-red-600 text-white rounded-full hover:bg-red-500 shadow-xl transform scale-90 group-hover:scale-100 transition-transform"><Trash2 size={20}/></button>
-                      </div>
-                  </div>
-              ))}
-              {adminBackgrounds.length === 0 && <p className="text-gray-500 col-span-full text-center py-20 bg-white/5 rounded-2xl border border-dashed border-white/10">No backgrounds uploaded yet.</p>}
-          </div>
-      </div>
-  );
-
   const renderAdminUsers = () => (
       <div className="h-full flex flex-col animate-fade-in">
-          <div className="bg-[#121216] p-4 rounded-2xl border border-white/10 mb-6 flex flex-col md:flex-row gap-4">
-              <div className="relative flex-1">
-                  <Search className="absolute left-4 top-3.5 text-gray-500" size={18} />
-                  <input type="text" value={adminTargetEmail} onChange={(e) => setAdminTargetEmail(e.target.value)} placeholder="Search User by Unique ID or Email..." className="w-full bg-[#050505] border border-white/10 pl-12 pr-4 py-3 rounded-xl text-white outline-none focus:border-violet-500 text-sm font-medium" />
-              </div>
-              <button onClick={searchAdminUser} disabled={loading} className="px-8 bg-white text-black hover:bg-gray-200 font-bold rounded-xl disabled:opacity-50 text-sm">
-                  {loading ? <Loader2 className="animate-spin" /> : "Find User"}
-              </button>
-          </div>
-
+          <form onSubmit={handleAdminSearchUser} className="flex gap-2 mb-6">
+              <input 
+                 type="text" 
+                 value={adminTargetEmail}
+                 onChange={(e) => setAdminTargetEmail(e.target.value)}
+                 placeholder="User Email..."
+                 className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white"
+              />
+              <button type="submit" disabled={loading} className="bg-violet-600 px-6 rounded-xl text-white font-bold">Search</button>
+          </form>
+          
           {fetchedAdminUser ? (
               <div className="bg-[#121216] border border-white/10 rounded-2xl p-6 flex-1 overflow-y-auto">
                    <div className="flex flex-col md:flex-row items-start justify-between mb-8 gap-6 border-b border-white/5 pb-8">
@@ -1110,80 +648,67 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                            <div className="relative group w-24 h-24">
                                 <div className="relative w-full h-full">
                                     <img src={fetchedAdminUser.photoURL || ''} className="w-full h-full rounded-2xl bg-gray-800 object-cover border-4 border-[#25252D] shadow-2xl" />
+                                    {fetchedAdminUser.frameUrl && <img src={fetchedAdminUser.frameUrl} className="absolute -inset-2 w-[120%] h-[120%] object-contain z-10" />}
                                 </div>
                                 <input type="file" ref={adminFileInputRef} className="hidden" onChange={handleAdminImageUpload} accept="image/*" />
                                 <button onClick={() => adminFileInputRef.current?.click()} className="absolute -bottom-2 -right-2 p-2 bg-white text-black rounded-full shadow-lg hover:scale-110 transition-transform z-20"><Camera size={14}/></button>
                            </div>
                            <div>
                                <h3 className="text-2xl font-bold text-white">{fetchedAdminUser.displayName}</h3>
-                               <p className="text-gray-400 text-xs font-mono bg-white/5 px-2 py-1 rounded-lg inline-block mt-1">ID: {fetchedAdminUser.uniqueId}</p>
-                               <p className="text-gray-500 text-xs mt-1">{fetchedAdminUser.email}</p>
-                               <div className="flex gap-2 mt-3">
-                                   {fetchedAdminUser.isBanned && <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded">BANNED</span>}
-                                   {fetchedAdminUser.isAuthorizedListener && <span className="bg-emerald-500 text-black text-[10px] font-bold px-2 py-1 rounded">LISTENER</span>}
-                               </div>
+                               <p className="text-gray-500 text-sm">{fetchedAdminUser.email}</p>
+                               <p className="text-violet-400 font-mono mt-1">ID: {fetchedAdminUser.uniqueId}</p>
                            </div>
-                       </div>
-                       <div className="flex flex-wrap gap-2 w-full md:w-auto">
-                           <button onClick={toggleBan} className={`flex-1 md:flex-none px-4 py-2 rounded-xl text-xs font-bold transition-all ${fetchedAdminUser.isBanned ? 'bg-green-500 text-white shadow-lg' : 'bg-red-500 text-white shadow-lg'}`}>{fetchedAdminUser.isBanned ? 'Unban Account' : 'Ban Account'}</button>
-                           <button onClick={toggleListener} className={`flex-1 md:flex-none px-4 py-2 rounded-xl text-xs font-bold transition-all ${fetchedAdminUser.isAuthorizedListener ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'}`}>{fetchedAdminUser.isAuthorizedListener ? 'Revoke Listener' : 'Approve Listener'}</button>
                        </div>
                    </div>
                    
                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                       {/* Profile Edit */}
                        <div className="space-y-4">
-                           <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2"><Edit2 size={14}/> Profile Details</h4>
-                           <div className="bg-[#0A0A0E] p-4 rounded-xl space-y-3 border border-white/5">
-                                <div><label className="text-[10px] text-gray-500 font-bold uppercase mb-1 block">Display Name</label><input type="text" value={adminEditName} onChange={(e) => setAdminEditName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white" /></div>
-                                <div><label className="text-[10px] text-gray-500 font-bold uppercase mb-1 block">Bio</label><textarea value={adminEditBio} onChange={(e) => setAdminEditBio(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white resize-none h-24" /></div>
-                                <button onClick={saveTargetProfile} disabled={loading} className="w-full py-3 bg-white text-black font-bold rounded-lg text-xs hover:bg-gray-200">Save Changes</button>
-                           </div>
+                           <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Edit2 size={14}/> Edit Profile</h4>
+                           <input type="text" value={adminEditName} onChange={(e) => setAdminEditName(e.target.value)} placeholder="Display Name" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white" />
+                           <textarea value={adminEditBio} onChange={(e) => setAdminEditBio(e.target.value)} placeholder="Bio" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white h-24 resize-none" />
+                           <button onClick={handleAdminUpdateUser} className="w-full bg-violet-600 hover:bg-violet-500 py-3 rounded-xl font-bold text-white shadow-lg">Update Profile</button>
                        </div>
                        
-                       {/* Wallet & Notifications */}
                        <div className="space-y-6">
                            <div>
-                               <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Wallet size={14}/> Wallet</h4>
-                               <div className="bg-gradient-to-br from-yellow-900/20 to-amber-900/20 rounded-xl p-5 border border-yellow-500/20">
-                                   <div className="flex justify-between items-end mb-4">
-                                       <div>
-                                           <p className="text-[10px] text-yellow-500 font-bold uppercase">Balance</p>
-                                           <p className="text-3xl font-bold text-white">{fetchedAdminUser.walletBalance || 0}</p>
-                                       </div>
-                                       <Coins size={32} className="text-yellow-500/20" />
-                                   </div>
-                                   <div className="flex gap-2">
-                                       <input type="number" value={adminCoinAmount} onChange={(e) => setAdminCoinAmount(e.target.value)} placeholder="0" className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none font-bold" />
-                                       <button onClick={() => manageCoins('add')} className="px-4 bg-green-500 text-black hover:bg-green-400 rounded-lg font-bold"><Plus size={16}/></button>
-                                       <button onClick={() => manageCoins('remove')} className="px-4 bg-red-500 text-white hover:bg-red-400 rounded-lg font-bold"><Minus size={16}/></button>
-                                   </div>
+                               <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Wallet size={14}/> Wallet Balance: {fetchedAdminUser.walletBalance || 0}</h4>
+                               <div className="flex gap-2">
+                                   <input type="number" value={adminCoinAmount} onChange={(e) => setAdminCoinAmount(e.target.value)} placeholder="Amount" className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white" />
+                                   <button onClick={handleAdminAddCoins} className="bg-yellow-500 text-black px-6 rounded-xl font-bold">Add</button>
                                </div>
                            </div>
-                           
+
                            <div>
-                               <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Megaphone size={14}/> Notify User</h4>
-                               <div className="flex gap-2">
-                                   <input type="text" value={adminNotification} onChange={(e) => setAdminNotification(e.target.value)} placeholder="System message..." className="flex-1 bg-[#0A0A0E] border border-white/10 rounded-lg px-3 py-2 text-sm text-white" />
-                                   <button onClick={sendNotification} className="px-4 bg-violet-600 text-white rounded-lg text-xs font-bold hover:bg-violet-500"><Send size={14}/></button>
-                               </div>
+                               <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Gift size={14}/> Items</h4>
+                               <button onClick={() => setShowAssignFrameModal(true)} className="w-full py-3 bg-fuchsia-600/10 text-fuchsia-400 border border-fuchsia-600/20 rounded-xl font-bold hover:bg-fuchsia-600/20 flex items-center justify-center gap-2">
+                                   <FrameIcon size={16} /> Give Frame
+                               </button>
                            </div>
                        </div>
                    </div>
               </div>
           ) : (
-              <div className="bg-[#121216] border border-white/10 rounded-2xl p-6 flex-1 overflow-y-auto">
-                  <h3 className="text-sm font-bold text-gray-400 mb-6 uppercase tracking-wider">Recently Joined</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {recentUsers.map(u => (
-                          <div key={u.uid} onClick={() => { setFetchedAdminUser(u); setAdminEditName(u.displayName || ''); setAdminEditBio(u.bio || ''); }} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 cursor-pointer transition-colors border border-transparent hover:border-white/10">
-                              <img src={u.photoURL || ''} className="w-10 h-10 rounded-full bg-gray-800 object-cover" />
-                              <div className="min-w-0">
-                                  <p className="text-sm font-bold text-white truncate">{u.displayName}</p>
-                                  <p className="text-[10px] text-gray-500 font-mono">{u.uniqueId}</p>
-                              </div>
-                          </div>
-                      ))}
+             <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+                 <Search size={48} className="mb-4 opacity-50"/>
+                 <p>Search for a user by email to manage them</p>
+             </div>
+          )}
+
+          {showAssignFrameModal && (
+              <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 p-4">
+                  <div className="bg-[#1A1A21] w-full max-w-md rounded-2xl border border-white/10 p-6 shadow-2xl">
+                      <div className="flex justify-between items-center mb-4">
+                          <h3 className="text-lg font-bold text-white">Select Frame to Give</h3>
+                          <button onClick={() => setShowAssignFrameModal(false)}><X size={20} className="text-gray-400"/></button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 max-h-[50vh] overflow-y-auto p-2">
+                          {adminFrames.map(frame => (
+                              <button key={frame.id} onClick={() => handleAssignFrame(frame)} className="flex flex-col items-center bg-black/40 p-3 rounded-xl hover:bg-white/5 border border-white/5">
+                                  <img src={frame.url} className="w-16 h-16 object-contain mb-2" />
+                                  <span className="text-xs text-white truncate w-full">{frame.name}</span>
+                              </button>
+                          ))}
+                      </div>
                   </div>
               </div>
           )}
@@ -1194,31 +719,33 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
     <div className="flex flex-col h-full bg-transparent text-white relative">
       <input type="file" ref={fileInputRef} className="hidden" accept="image/png, image/jpeg, image/jpg, image/webp" onChange={handleImageUpload} />
       
-      {/* Background Ambience */}
       <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-violet-900/20 to-transparent pointer-events-none z-0" />
 
       <div className="flex-1 overflow-y-auto pb-24 px-4 pt-6 space-y-5 no-scrollbar relative z-10">
         
-        {/* Compact Profile Card */}
         <div className="bg-[#121216]/80 backdrop-blur-xl border border-white/10 rounded-[2rem] p-5 relative overflow-hidden shadow-2xl">
             <div className="absolute top-0 right-0 w-40 h-40 bg-violet-600/10 rounded-full blur-[60px] pointer-events-none -mr-10 -mt-10"></div>
             
             <div className="flex gap-5 relative z-10">
-                {/* Avatar */}
-                <div className="relative flex-shrink-0">
-                    <div className="w-20 h-20 rounded-[1.2rem] p-[2px] bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg relative">
+                <div className="relative flex-shrink-0 w-20 h-20">
+                    <div className="w-full h-full rounded-[1.2rem] p-[2px] bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg relative z-0">
                         <img 
                             src={isEditing ? editedPhoto : (user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}`)} 
                             className="w-full h-full rounded-[1rem] object-cover bg-gray-900"
                             alt="Profile"
                         />
                     </div>
+                    {user.frameUrl && (
+                        <div className="absolute -inset-3 z-10 pointer-events-none">
+                            <img src={user.frameUrl} className="w-full h-full object-contain" />
+                        </div>
+                    )}
+
                     {canEditProfile && isEditing && !uploading && (
                          <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-2 -right-2 p-1.5 bg-white text-black rounded-full shadow-lg hover:scale-110 transition-transform z-30"><Camera size={12} /></button>
                      )}
                 </div>
 
-                {/* Info */}
                 <div className="flex-1 min-w-0 pt-0.5">
                     {isEditing && canEditProfile ? (
                         <div className="space-y-2">
@@ -1252,7 +779,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                 </div>
             </div>
 
-            {/* Stats Row */}
             <div className="flex items-center gap-3 mt-5 relative z-10">
                  <button onClick={() => handleShowList('following')} className="flex-1 bg-[#0A0A0F]/50 rounded-xl p-3 flex flex-col items-center border border-white/5 group active:scale-95 transition-transform hover:bg-white/5">
                      <span className="text-sm font-extrabold text-white group-hover:text-violet-300 transition-colors">{user.following?.length || 0}</span>
@@ -1262,10 +788,17 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                      <span className="text-sm font-extrabold text-white group-hover:text-fuchsia-300 transition-colors">{user.followers?.length || 0}</span>
                      <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Followers</span>
                  </button>
+                 
                  <button onClick={() => { setShowRechargeModal(true); setWalletTab('recharge'); }} className="flex-1 bg-gradient-to-br from-yellow-500/10 to-amber-500/10 rounded-xl p-3 flex flex-col items-center border border-yellow-500/20 group active:scale-95 transition-transform hover:bg-yellow-500/20">
                      <span className="text-sm font-extrabold text-yellow-500">{user.walletBalance || 0}</span>
                      <span className="text-[9px] text-yellow-600/70 uppercase font-bold tracking-wider">Coins</span>
                  </button>
+            </div>
+            
+            <div className="mt-3">
+                <button onClick={() => setShowBagModal(true)} className="w-full bg-[#1A1A21] border border-white/10 rounded-xl py-2 flex items-center justify-center gap-2 text-xs font-bold text-gray-300 hover:text-white hover:bg-white/5 transition-all">
+                    <ShoppingBag size={14} className="text-violet-400" /> My Bag
+                </button>
             </div>
 
             {isEditing && (
@@ -1276,7 +809,6 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
             )}
         </div>
 
-        {/* Menu Items */}
         <div>
             <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3 ml-2">Menu</h3>
             <div className="space-y-3">
@@ -1292,32 +824,66 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
             <LogOut size={16} />Sign Out
         </button>
         
-        <p className="text-center text-[10px] text-gray-700 pb-4">Heartly Voice v2.5</p>
+        <p className="text-center text-[10px] text-gray-700 pb-4">Heartly Voice v2.6</p>
       </div>
 
-      {/* Admin Panel */}
+      {showBagModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowBagModal(false)}>
+              <div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
+                  <div className="p-4 border-b border-white/5 flex justify-between items-center">
+                      <h3 className="text-lg font-bold text-white flex items-center gap-2"><ShoppingBag size={20} className="text-violet-400"/> My Bag</h3>
+                      <button onClick={() => setShowBagModal(false)}><X size={20} className="text-gray-400"/></button>
+                  </div>
+                  <div className="p-6 overflow-y-auto">
+                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Frames</h4>
+                      {!user.ownedFrames || user.ownedFrames.length === 0 ? (
+                          <p className="text-center text-gray-500 text-xs py-8">No frames owned yet.</p>
+                      ) : (
+                          <div className="grid grid-cols-3 gap-4">
+                              <button onClick={handleUnequipFrame} className="flex flex-col items-center bg-white/5 p-3 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
+                                  <div className="w-16 h-16 rounded-full border-2 border-dashed border-gray-600 flex items-center justify-center mb-2 text-gray-500">
+                                      <Ban size={20} />
+                                  </div>
+                                  <span className="text-[10px] text-gray-400">None</span>
+                              </button>
+                              
+                              {user.ownedFrames.map(frame => (
+                                  <button 
+                                    key={frame.id} 
+                                    onClick={() => handleEquipFrame(frame)}
+                                    className={`flex flex-col items-center p-3 rounded-xl border transition-all relative ${user.frameUrl === frame.url ? 'bg-violet-600/20 border-violet-500' : 'bg-black/40 border-white/5 hover:bg-white/10'}`}
+                                  >
+                                      <div className="relative w-16 h-16 mb-2">
+                                          <div className="absolute inset-1 bg-gray-700 rounded-full opacity-50"></div>
+                                          <img src={frame.url} className="absolute inset-0 w-full h-full object-contain z-10" />
+                                      </div>
+                                      <span className="text-[10px] text-white truncate w-full text-center">{frame.name}</span>
+                                      {user.frameUrl === frame.url && (
+                                          <div className="absolute top-2 right-2 bg-green-500 rounded-full p-0.5"><CheckCircle2 size={10} className="text-black"/></div>
+                                      )}
+                                  </button>
+                              ))}
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )}
+
       {showAdminPanel && isAdmin && (
         <div className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-xl flex flex-col md:flex-row overflow-hidden animate-fade-in">
-            {/* Mobile Header with Close */}
-            <div className="md:hidden flex items-center justify-between p-4 border-b border-white/10 bg-[#121216]">
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <ShieldAlert size={20} className="text-red-500"/> Admin Panel
-                </h2>
-                <button onClick={() => setShowAdminPanel(false)} className="p-2 bg-white/10 rounded-full text-gray-400">
-                    <X size={20}/>
-                </button>
+            <div className="md:hidden flex items-center justify-between p-4 border-b border-white/5">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2"><ShieldAlert size={18} className="text-red-500"/> Admin Panel</h2>
+                <button onClick={() => setShowAdminPanel(false)}><X size={24} className="text-gray-400"/></button>
             </div>
-
-            {/* Navigation */}
+            
             <div className="md:w-64 bg-[#121216] border-b md:border-b-0 md:border-r border-white/5 flex flex-row md:flex-col flex-shrink-0 overflow-x-auto md:overflow-visible no-scrollbar p-2 gap-1 md:gap-2">
-                <div className="hidden md:flex items-center gap-3 px-4 py-6 mb-2">
-                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 to-orange-600 flex items-center justify-center shadow-lg">
-                        <ShieldAlert size={24} className="text-white"/>
-                     </div>
-                     <div>
-                        <h2 className="font-bold text-white text-lg leading-none">Admin</h2>
-                        <span className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Control Center</span>
-                     </div>
+                <div className="hidden md:flex items-center gap-3 p-4 mb-2">
+                    <div className="w-10 h-10 bg-red-500/10 rounded-xl flex items-center justify-center text-red-500"><ShieldAlert size={20}/></div>
+                    <div>
+                        <h3 className="font-bold text-white text-sm">Admin Panel</h3>
+                        <p className="text-[10px] text-gray-500">System Management</p>
+                    </div>
                 </div>
                 
                 {[
@@ -1329,6 +895,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                     { id: 'listeners', label: 'Listeners', icon: Headphones },
                     { id: 'stickers', label: 'Stickers', icon: Smile },
                     { id: 'backgrounds', label: 'Backgrounds', icon: ImageIcon },
+                    { id: 'frames', label: 'Frames', icon: FrameIcon },
                 ].map(item => (
                     <button 
                         key={item.id}
@@ -1345,45 +912,143 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                     </button>
                 ))}
                 
-                <div className="hidden md:block mt-auto p-4">
-                     <button onClick={() => setShowAdminPanel(false)} className="w-full py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors">
-                        <LogOut size={18} /> Exit Panel
-                     </button>
-                </div>
+                <button onClick={() => setShowAdminPanel(false)} className="md:mt-auto flex items-center gap-3 px-4 py-3 rounded-xl text-gray-500 hover:text-white hover:bg-white/5 transition-all">
+                    <LogOut size={18} />
+                    <span className="text-sm font-bold">Exit Panel</span>
+                </button>
             </div>
 
-            {/* Content Area */}
             <div className="flex-1 bg-[#0A0A0F] relative flex flex-col min-w-0 overflow-hidden">
-                 {/* Desktop Header */}
-                 <div className="hidden md:flex items-center justify-between px-8 py-6 border-b border-white/5 bg-[#0A0A0F]/50 backdrop-blur-md sticky top-0 z-20">
-                     <h2 className="text-2xl font-bold text-white capitalize">{adminTab}</h2>
-                     <div className="flex gap-3">
-                         <button onClick={fetchAdminStats} className="p-2.5 bg-white/5 text-gray-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors" title="Refresh Data">
-                            <RotateCw size={20} className={loading ? 'animate-spin' : ''} />
-                         </button>
+                 <div className="hidden md:flex items-center justify-between px-8 py-6 border-b border-white/5">
+                     <h2 className="text-2xl font-extrabold text-white capitalize">{adminTab}</h2>
+                     <div className="flex items-center gap-4">
+                         <div className="flex items-center gap-2 bg-[#1A1A21] px-3 py-1.5 rounded-full border border-white/5">
+                             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                             <span className="text-xs font-bold text-gray-400">System Online</span>
+                         </div>
                      </div>
                  </div>
 
                  <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
                      {adminTab === 'dashboard' && renderAdminDashboard()}
                      {adminTab === 'users' && renderAdminUsers()}
-                     {adminTab === 'rooms' && renderAdminRooms()}
-                     {adminTab === 'listeners' && renderAdminListeners()}
-                     {adminTab === 'reports' && renderAdminReports()}
-                     {adminTab === 'stickers' && renderAdminStickers()}
-                     {adminTab === 'backgrounds' && renderAdminBackgrounds()}
-                     {adminTab === 'gifts' && renderAdminGifts()}
+                     {adminTab === 'frames' && renderAdminFrames()}
                  </div>
             </div>
         </div>
       )}
+
+      {showUserList && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowUserList(null)}>
+            <div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b border-white/5 flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-white capitalize">{showUserList}</h3>
+                    <button onClick={() => setShowUserList(null)}><X size={20} className="text-gray-400"/></button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    {loadingList ? (
+                        <div className="flex justify-center py-8"><Loader2 className="animate-spin text-gray-500" /></div>
+                    ) : userList.length === 0 ? (
+                        <p className="text-center text-gray-500 text-sm py-8">No users found.</p>
+                    ) : (
+                        userList.map(u => (
+                            <div key={u.uid} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5">
+                                <div className="flex items-center gap-3">
+                                    <img src={u.photoURL || ''} className="w-10 h-10 rounded-full bg-gray-800 object-cover" />
+                                    <div>
+                                        <p className="text-sm font-bold text-white">{u.displayName}</p>
+                                        <p className="text-[10px] text-gray-500">@{u.uniqueId}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        </div>
+      )}
       
-      {/* ... (Existing modals for Privacy, Help, Recharge, UserList, VisitingProfile) ... */}
-      {showPrivacyModal && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in overflow-hidden relative flex flex-col max-h-[70vh]"><div className="px-6 py-5 flex items-center justify-between border-b border-white/5"><h3 className="text-lg font-bold text-white flex items-center gap-2"><Shield size={20} className="text-emerald-400" /> Privacy</h3><button onClick={() => setShowPrivacyModal(false)} className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X size={18} /></button></div><div className="flex-1 overflow-y-auto p-6 space-y-6"><div><h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2">Blocked Users</h4>{loadingBlocked ? (<div className="flex justify-center py-4"><Loader2 className="animate-spin text-gray-500" /></div>) : blockedProfiles.length === 0 ? (<div className="text-center py-6 bg-white/5 rounded-2xl border border-white/5"><p className="text-gray-500 text-xs">No blocked users.</p></div>) : (<div className="space-y-2">{blockedProfiles.map(p => (<div key={p.uid} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><div className="flex items-center gap-3"><img src={p.photoURL || ''} className="w-8 h-8 rounded-full bg-gray-800" /><span className="text-sm font-bold text-white">{p.displayName}</span></div><button onClick={() => handleUnblock(p.uid)} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-gray-300 transition-colors" title="Unblock"><UserX size={16} /></button></div>))}</div>)}</div><div className="pt-6 border-t border-white/5"><h4 className="text-xs font-bold text-red-500 uppercase tracking-wider mb-4 flex items-center gap-2">Danger Zone</h4><button onClick={handleDeleteAccount} className="w-full py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2"><Trash2 size={16} /> Request Account Deletion</button><p className="text-[10px] text-gray-600 mt-2 text-center">Deletion requests are processed manually within 24 hours.</p></div></div></div></div>)}
-      {showRechargeModal && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in overflow-hidden relative"><div className="px-6 py-5 flex items-center justify-between border-b border-white/5"><h3 className="text-lg font-bold text-white flex items-center gap-2"><Wallet size={20} className="text-yellow-400" /> Wallet</h3><button onClick={() => !isProcessing && setShowRechargeModal(false)} className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X size={18} /></button></div><div className="flex border-b border-white/5 bg-black/20"><button onClick={() => setWalletTab('recharge')} className={`flex-1 py-4 text-xs font-bold transition-colors ${walletTab === 'recharge' ? 'text-yellow-400 border-b-2 border-yellow-400 bg-white/5' : 'text-gray-500 hover:text-white'}`}>Buy Coins</button><button onClick={() => setWalletTab('earnings')} className={`flex-1 py-4 text-xs font-bold transition-colors ${walletTab === 'earnings' ? 'text-green-400 border-b-2 border-green-400 bg-white/5' : 'text-gray-500 hover:text-white'}`}>Earnings</button></div><div className="p-6">{walletTab === 'recharge' ? (<><div className="text-center mb-8"><p className="text-gray-500 text-[10px] uppercase font-bold tracking-wider mb-2">Current Balance</p><h2 className="text-4xl font-extrabold text-white tracking-tight">{user.walletBalance || 0} <span className="text-lg font-medium text-yellow-500">Coins</span></h2></div><div className="space-y-4"><div className="relative"><div className="relative flex items-center"><Coins size={20} className="absolute left-4 text-yellow-400" /><input type="number" min="1" value={rechargeAmount} onChange={(e) => setRechargeAmount(Math.max(1, parseInt(e.target.value) || 0))} className="w-full bg-black/30 border border-white/10 rounded-xl py-4 pl-12 pr-4 text-white font-bold text-lg outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 transition-all placeholder-gray-600" /></div></div><div className="grid grid-cols-4 gap-2">{[10, 50, 100, 500].map(amt => (<button key={amt} onClick={() => setRechargeAmount(amt)} className={`py-2 rounded-lg text-xs font-bold transition-all border ${rechargeAmount === amt ? 'bg-yellow-500 border-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.4)]' : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10'}`}>+{amt}</button>))}</div><div className="bg-gradient-to-r from-emerald-900/30 to-teal-900/30 border border-emerald-500/20 rounded-xl p-4 flex justify-between items-center mt-4"><div className="flex items-center gap-2"><div className="p-2 bg-emerald-500/10 rounded-full"><CreditCard size={16} className="text-emerald-400" /></div><div><p className="text-xs font-bold text-gray-300">Total Price</p><p className="text-[10px] text-gray-500">1 Coin = ₹1.00</p></div></div><div className="text-xl font-bold text-white">₹{rechargeAmount.toFixed(2)}</div></div><button onClick={handleRecharge} disabled={isProcessing} className="w-full bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-black font-bold py-4 rounded-xl shadow-lg shadow-yellow-500/20 transition-all active:scale-[0.98] mt-2 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">{isProcessing ? <Loader2 className="animate-spin" size={20} /> : <><Coins size={20} /> Pay Now</>}</button></div></>) : (<><div className="bg-gradient-to-br from-green-900/40 to-emerald-900/40 border border-green-500/20 rounded-2xl p-6 text-center mb-6 relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-10"><Banknote size={64} className="text-green-400" /></div><p className="text-green-400 text-[10px] font-bold uppercase tracking-widest mb-1">Commission Earned</p><h2 className="text-4xl font-extrabold text-white mb-1">{user.commissionBalance || 0}</h2><p className="text-[10px] text-gray-400">Withdrawable Balance</p></div><div className="space-y-3"><div className="bg-[#0A0A0E] p-4 rounded-xl border border-white/5 flex items-center gap-3"><div className="bg-white/10 p-2 rounded-lg"><Landmark size={20} className="text-gray-300"/></div><div><p className="text-xs font-bold text-white">Bank Withdrawal</p><p className="text-[10px] text-gray-500">Min. 100 coins required</p></div></div><button onClick={handleWithdraw} disabled={isProcessing || (user.commissionBalance || 0) < 100} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-green-600/20 transition-all active:scale-[0.98] mt-4 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">{isProcessing ? <Loader2 className="animate-spin" size={20} /> : "Withdraw Funds"}</button><p className="text-center text-[10px] text-gray-500 mt-2">Withdrawals are processed within 24 hours.</p></div></>)}</div></div></div>)}
-      {showHelpModal && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in overflow-hidden relative flex flex-col max-h-[70vh]"><div className="px-6 py-5 flex items-center justify-between border-b border-white/5"><h3 className="text-lg font-bold text-white flex items-center gap-2"><HelpCircle size={20} className="text-cyan-400" /> Help & Support</h3><button onClick={() => setShowHelpModal(false)} className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-gray-400 transition-colors"><X size={18} /></button></div><div className="flex border-b border-white/5 bg-black/20"><button onClick={() => setSupportTab('faq')} className={`flex-1 py-4 text-xs font-bold transition-colors ${supportTab === 'faq' ? 'text-cyan-400 border-b-2 border-cyan-400 bg-white/5' : 'text-gray-500 hover:text-white'}`}>FAQ</button><button onClick={() => setSupportTab('contact')} className={`flex-1 py-4 text-xs font-bold transition-colors ${supportTab === 'contact' ? 'text-cyan-400 border-b-2 border-cyan-400 bg-white/5' : 'text-gray-500 hover:text-white'}`}>Contact Us</button></div><div className="flex-1 overflow-y-auto p-6">{supportTab === 'faq' ? (<div className="space-y-3">{faqs.map((faq, i) => (<div key={i} className="bg-white/5 rounded-xl overflow-hidden border border-white/5"><button onClick={() => setExpandedFaq(expandedFaq === i ? null : i)} className="w-full px-4 py-4 flex items-center justify-between text-left hover:bg-white/5 transition-colors"><span className="text-sm font-bold text-white">{faq.q}</span>{expandedFaq === i ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}</button>{expandedFaq === i && (<div className="px-4 pb-4 pt-1 text-xs text-gray-400 leading-relaxed border-t border-white/5">{faq.a}</div>)}</div>))}</div>) : (<div className="space-y-4"><div className="bg-cyan-900/20 border border-cyan-500/20 p-4 rounded-xl"><p className="text-cyan-200 text-xs">Having trouble? Send us a message and our support team will reach out to you directly.</p></div><textarea value={supportMessage} onChange={(e) => setSupportMessage(e.target.value)} placeholder="Describe your issue..." className="w-full bg-black/30 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-cyan-500 min-h-[150px] resize-none" /><button onClick={handleSendSupport} disabled={sendingSupport || !supportMessage.trim()} className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50">{sendingSupport ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />} Send Message</button></div>)}</div></div></div>)}
-      {showUserList && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowUserList(null)}><div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col max-h-[60vh]" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/5 flex items-center justify-between"><h3 className="text-lg font-bold text-white capitalize flex items-center gap-2"><Users size={18} className="text-violet-400"/> {showUserList}</h3><button onClick={() => setShowUserList(null)} className="p-1.5 bg-white/5 rounded-full hover:bg-white/10"><X size={18} /></button></div><div className="flex-1 overflow-y-auto p-2 space-y-2">{loadingList ? (<div className="flex justify-center py-8"><Loader2 className="animate-spin text-violet-500" /></div>) : userList.length === 0 ? (<div className="text-center py-8 text-gray-500 text-xs">No users found.</div>) : (userList.map(u => (<button key={u.uid} onClick={() => setVisitingProfile(u)} className="w-full flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors text-left border border-transparent hover:border-white/10"><div className="relative w-10 h-10"><img src={u.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover" /></div><div><p className="font-bold text-sm text-white">{u.displayName}</p><p className="text-[10px] text-gray-400 truncate w-40">{u.bio || 'No bio'}</p></div></button>)))}</div></div></div>)}
-      {visitingProfile && (<div className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setVisitingProfile(null)}><div className="bg-[#1A1A21] w-full max-w-sm rounded-[2rem] p-6 border border-white/10 shadow-2xl animate-fade-in relative" onClick={e => e.stopPropagation()}><div className="absolute top-4 right-4 text-gray-400 hover:text-white cursor-pointer" onClick={() => setVisitingProfile(null)}><X size={20} /></div><div className="flex flex-col items-center"><div className="relative mb-4 w-24 h-24"><img src={visitingProfile.photoURL || ''} className="w-full h-full rounded-full border-4 border-[#25252D] bg-gray-800 object-cover shadow-2xl" /></div><h2 className="text-xl font-bold text-white mb-1 flex items-center gap-2">{visitingProfile.displayName}{visitingProfile.isAuthorizedListener && <ShieldCheck size={16} className="text-emerald-400" title="Authorized Listener" />}</h2><p className="text-violet-400 text-xs font-mono tracking-wider mb-2">ID: {visitingProfile.uniqueId || '....'}</p><p className="text-gray-400 text-sm text-center mb-6 px-4">{visitingProfile.bio || "No bio yet."}</p><div className="flex gap-8 mb-6 text-center w-full justify-center"><div><span className="block font-bold text-white text-lg">{visitingProfile.following?.length || 0}</span><span className="text-[10px] text-gray-500 uppercase font-bold">Following</span></div><div><span className="block font-bold text-white text-lg">{visitingProfile.followers?.length || 0}</span><span className="text-[10px] text-gray-500 uppercase font-bold">Followers</span></div></div>{user.uid !== visitingProfile.uid && (<button onClick={toggleFollowVisitor} className={`w-full py-3 rounded-xl font-bold transition-all flex items-center justify-center gap-2 ${isFollowingVisitor ? 'bg-white/10 text-white hover:bg-white/20 border border-white/10' : 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white hover:opacity-90 shadow-lg'}`}>{isFollowingVisitor ? <UserCheck size={18} /> : <UserPlus size={18} />}{isFollowingVisitor ? 'Following' : 'Follow'}</button>)}</div></div></div>)}
+      {showHelpModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowHelpModal(false)}>
+            <div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b border-white/5 flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2"><HelpCircle size={20} className="text-cyan-400"/> Help & Support</h3>
+                    <button onClick={() => setShowHelpModal(false)}><X size={20} className="text-gray-400"/></button>
+                </div>
+                <div className="p-4 space-y-4">
+                     {faqs.map((faq, i) => (
+                         <div key={i} className="border border-white/5 rounded-xl overflow-hidden">
+                             <button onClick={() => setExpandedFaq(expandedFaq === i ? null : i)} className="w-full flex justify-between items-center p-3 bg-white/5 text-left">
+                                 <span className="text-xs font-bold text-white">{faq.q}</span>
+                                 {expandedFaq === i ? <ChevronUp size={14} className="text-gray-400"/> : <ChevronDown size={14} className="text-gray-400"/>}
+                             </button>
+                             {expandedFaq === i && <div className="p-3 text-xs text-gray-400 bg-black/20">{faq.a}</div>}
+                         </div>
+                     ))}
+                     <div className="pt-4 border-t border-white/5">
+                         <p className="text-xs text-gray-400 mb-2">Still need help?</p>
+                         <button className="w-full py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold transition-colors">Contact Support</button>
+                     </div>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {showPrivacyModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowPrivacyModal(false)}>
+            <div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col max-h-[70vh]" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b border-white/5 flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2"><Shield size={20} className="text-emerald-400"/> Privacy Center</h3>
+                    <button onClick={() => setShowPrivacyModal(false)}><X size={20} className="text-gray-400"/></button>
+                </div>
+                <div className="p-4 space-y-4 overflow-y-auto">
+                    <div>
+                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Blocked Users</h4>
+                        {loadingBlocked ? (
+                             <div className="flex justify-center py-4"><Loader2 className="animate-spin text-gray-500" /></div>
+                        ) : blockedProfiles.length === 0 ? (
+                             <p className="text-gray-500 text-xs italic">No blocked users.</p>
+                        ) : (
+                             <div className="space-y-2">
+                                 {blockedProfiles.map(p => (
+                                     <div key={p.uid} className="flex justify-between items-center bg-white/5 p-2 rounded-lg">
+                                         <span className="text-xs text-white font-bold">{p.displayName}</span>
+                                         <button className="text-[10px] text-red-400 hover:text-white">Unblock</button>
+                                     </div>
+                                 ))}
+                             </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {showRechargeModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4" onClick={() => setShowRechargeModal(false)}>
+            <div className="bg-[#121216] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl animate-fade-in flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b border-white/5 flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2"><Wallet size={20} className="text-yellow-500"/> Wallet</h3>
+                    <button onClick={() => setShowRechargeModal(false)}><X size={20} className="text-gray-400"/></button>
+                </div>
+                <div className="p-6 text-center">
+                    <p className="text-gray-400 text-xs mb-2">Current Balance</p>
+                    <h2 className="text-4xl font-extrabold text-white mb-6 flex justify-center items-center gap-2"><Coins size={32} className="text-yellow-500"/> {user.walletBalance || 0}</h2>
+                    <div className="grid grid-cols-3 gap-3 mb-6">
+                        {[100, 500, 1000, 2000, 5000, 10000].map(amt => (
+                            <button key={amt} onClick={() => setRechargeAmount(amt)} className={`py-3 rounded-xl border font-bold text-sm transition-all ${rechargeAmount === amt ? 'bg-yellow-500 text-black border-yellow-500' : 'bg-white/5 border-white/10 text-gray-400 hover:border-white/20'}`}>
+                                ₹{amt}
+                            </button>
+                        ))}
+                    </div>
+                    <button className="w-full bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-4 rounded-xl shadow-lg shadow-yellow-500/20 transition-all active:scale-95 flex items-center justify-center gap-2">
+                        <CreditCard size={18}/> Recharge Now
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
     </div>
   );
 };

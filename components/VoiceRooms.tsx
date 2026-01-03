@@ -216,12 +216,15 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
                 <div className="flex items-center justify-between mt-6">
                    <div className="flex -space-x-3 items-center">
                       {room.participants.filter(p => p.seatIndex >= 0 || p.seatIndex === 999).slice(0, 4).map((p, i) => (
-                         <img 
-                           key={i}
-                           src={p.photoURL || `https://ui-avatars.com/api/?name=${p.displayName}`} 
-                           alt={p.displayName} 
-                           className="w-10 h-10 rounded-full border-2 border-[#121216] bg-gray-800 object-cover shadow-md"
-                         />
+                         <div key={i} className="relative w-10 h-10">
+                             <img 
+                               src={p.photoURL || `https://ui-avatars.com/api/?name=${p.displayName}`} 
+                               alt={p.displayName} 
+                               className="w-full h-full rounded-full border-2 border-[#121216] bg-gray-800 object-cover shadow-md"
+                             />
+                             {/* Frame Overlay in List */}
+                             {p.frameUrl && <img src={p.frameUrl} className="absolute -inset-1 w-[120%] h-[120%] object-contain pointer-events-none z-20" />}
+                         </div>
                       ))}
                       {room.participants.length > 4 && (
                         <div className="w-10 h-10 rounded-full border-2 border-[#121216] bg-[#1A1A21] text-[10px] flex items-center justify-center font-bold text-white shadow-md">

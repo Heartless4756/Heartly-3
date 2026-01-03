@@ -14,6 +14,15 @@ export interface UserProfile {
   isBanned?: boolean; // Admin controlled ban status
   createdAt?: number; // Timestamp of account creation
   blockedUsers?: string[]; // List of UIDs blocked by this user
+  frameUrl?: string | null; // Currently equipped frame URL
+  ownedFrames?: Frame[]; // Inventory of frames owned by the user
+}
+
+export interface Frame {
+  id: string;
+  url: string;
+  name: string;
+  createdAt: number;
 }
 
 export interface Room {
@@ -46,6 +55,7 @@ export interface Participant {
     url: string;
     expiresAt: number;
   };
+  frameUrl?: string | null; // Frame for the participant
 }
 
 export interface Sticker {
@@ -104,6 +114,7 @@ export interface ActiveListener {
   bio: string;
   lastActive: number;
   isBusy: boolean;
+  frameUrl?: string | null;
 }
 
 export interface CallRequest {
