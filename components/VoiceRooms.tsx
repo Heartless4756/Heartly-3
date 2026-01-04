@@ -168,8 +168,8 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
         )}
       </div>
 
-      {/* Room List with Scroll Fix */}
-      <div className="flex-1 px-6 space-y-4 native-scroll relative z-10 pb-32 no-scrollbar">
+      {/* Room List with Scroll Fix - Added min-h-0 */}
+      <div className="flex-1 px-6 space-y-4 native-scroll relative z-10 pb-32 no-scrollbar min-h-0">
         {loading ? (
            <div className="flex justify-center py-20"><div className="w-10 h-10 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin"/></div>
         ) : publicRooms.length === 0 ? (

@@ -478,7 +478,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
     <div className="flex flex-col h-full bg-transparent text-white relative">
       <input type="file" ref={fileInputRef} className="hidden" accept="image/png, image/jpeg, image/jpg, image/webp" onChange={handleImageUpload} />
       <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-violet-900/20 to-transparent pointer-events-none z-0" />
-      <div className="flex-1 overflow-y-auto pb-24 px-4 pt-6 space-y-5 no-scrollbar relative z-10 native-scroll">
+      <div className="flex-1 overflow-y-auto pb-24 px-4 pt-6 space-y-5 no-scrollbar relative z-10 native-scroll min-h-0">
         <div className="bg-[#121216]/80 backdrop-blur-xl border border-white/10 rounded-[2rem] p-5 relative overflow-hidden shadow-2xl">
             <div className="absolute top-0 right-0 w-40 h-40 bg-violet-600/10 rounded-full blur-[60px] pointer-events-none -mr-10 -mt-10"></div>
             <div className="flex gap-5 relative z-10">

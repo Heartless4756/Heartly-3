@@ -455,9 +455,10 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="h-[100dvh] w-full flex flex-col max-w-md mx-auto bg-[#050505] shadow-2xl shadow-black overflow-hidden relative border-x border-white/5 pt-safe">
-      <div className="absolute inset-0 z-0 flex flex-col pt-safe overflow-hidden">
-          <div className="flex-1 overflow-hidden relative"> 
+    <div className="h-[100dvh] w-full flex flex-col bg-[#050505] overflow-hidden relative">
+      <div className="absolute inset-0 z-0 flex flex-col overflow-hidden">
+          {/* Added min-h-0 here to ensure flex child can shrink and allow scrolling */}
+          <div className="flex-1 overflow-hidden relative min-h-0"> 
             {renderView()}
           </div>
           <Navigation currentView={currentView} setView={handleSetCurrentView} unreadCount={totalUnread} />
@@ -466,7 +467,7 @@ const App: React.FC = () => {
       {activeRoomId && (
         <>
             {/* Main Room View (Hidden when minimized) */}
-            <div className={`absolute inset-0 z-50 transition-all duration-300 flex flex-col pt-safe ${isRoomMinimized ? 'opacity-0 pointer-events-none' : 'opacity-100 bg-[#181818]'}`}>
+            <div className={`absolute inset-0 z-50 transition-all duration-300 flex flex-col ${isRoomMinimized ? 'opacity-0 pointer-events-none' : 'opacity-100 bg-[#181818]'}`}>
               <ActiveRoom 
                 roomId={activeRoomId} 
                 currentUser={userProfile} 

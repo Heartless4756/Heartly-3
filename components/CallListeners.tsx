@@ -267,8 +267,8 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
          )}
       </div>
 
-      {/* Online Listeners Grid */}
-      <div className="flex-1 overflow-y-auto space-y-4 native-scroll relative z-10 pb-4 no-scrollbar">
+      {/* Online Listeners Grid - Added min-h-0 */}
+      <div className="flex-1 overflow-y-auto space-y-4 native-scroll relative z-10 pb-4 no-scrollbar min-h-0">
           {activeListeners.length === 0 ? (
               <div className="text-center py-24 opacity-60">
                   <div className="w-24 h-24 bg-[#121216] border border-dashed border-white/10 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -294,7 +294,7 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
                                   <img src={listener.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover border-2 border-[#121216] relative z-10" />
                                   
                                   {/* Frame Overlay - Perfect Fit Update */}
-                                  {listener.frameUrl && <img src={listener.frameUrl} className="absolute inset-0 w-full h-full scale-[1.3] object-contain pointer-events-none z-20" />}
+                                  {listener.frameUrl && <img src={listener.frameUrl} className="absolute inset-0 w-full h-full scale-[1.35] object-contain pointer-events-none z-20" />}
                                   
                                   <div className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-[#121216] z-30 flex items-center justify-center ${listener.isBusy ? 'bg-yellow-500' : 'bg-emerald-500'}`}>
                                       {listener.isBusy ? <Clock size={8} className="text-black"/> : <Zap size={8} className="text-black" fill="black"/>}
@@ -347,7 +347,7 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
                   <div className="flex flex-col items-center mb-6">
                       <div className="relative mb-3 w-20 h-20">
                           <img src={selectedListener.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover border-4 border-[#202025]" />
-                          {selectedListener.frameUrl && <img src={selectedListener.frameUrl} className="absolute inset-0 w-full h-full scale-[1.3] object-contain pointer-events-none" />}
+                          {selectedListener.frameUrl && <img src={selectedListener.frameUrl} className="absolute inset-0 w-full h-full scale-[1.35] object-contain pointer-events-none" />}
                           <div className="absolute bottom-0 right-0 bg-emerald-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full border border-[#202025] flex items-center gap-1 z-20">
                               <Zap size={10} fill="black"/> Live
                           </div>
@@ -402,7 +402,7 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
                   <div className="absolute inset-0 rounded-full border border-emerald-500/30 animate-[ping_2s_linear_infinite_0.5s]"></div>
                   <div className="relative w-36 h-36 z-10">
                       <img src={activeListeners.find(l => l.uid === outgoingRequest.listenerId)?.photoURL || ''} className="w-full h-full rounded-full object-cover" />
-                      {activeListeners.find(l => l.uid === outgoingRequest.listenerId)?.frameUrl && <img src={activeListeners.find(l => l.uid === outgoingRequest.listenerId)?.frameUrl} className="absolute inset-0 w-full h-full scale-[1.3] object-contain pointer-events-none" />}
+                      {activeListeners.find(l => l.uid === outgoingRequest.listenerId)?.frameUrl && <img src={activeListeners.find(l => l.uid === outgoingRequest.listenerId)?.frameUrl} className="absolute inset-0 w-full h-full scale-[1.35] object-contain pointer-events-none" />}
                   </div>
               </div>
               

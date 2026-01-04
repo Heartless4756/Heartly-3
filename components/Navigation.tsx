@@ -11,8 +11,8 @@ interface NavigationProps {
 
 export const Navigation: React.FC<NavigationProps> = ({ currentView, setView, unreadCount = 0 }) => {
   return (
-    // Added pb-safe to handle iPhone Home Bar
-    <div className="fixed bottom-0 left-0 right-0 z-50 px-6 pb-6 pb-safe pointer-events-none flex justify-center w-full max-w-md mx-auto">
+    // Added pb-safe to handle iPhone Home Bar, removed max-w-md mx-auto for full width preference
+    <div className="fixed bottom-0 left-0 right-0 z-50 px-6 pb-6 pb-safe pointer-events-none flex justify-center w-full">
       <div className="bg-[#121216]/90 backdrop-blur-2xl border border-white/10 rounded-[2.5rem] px-3 py-2 flex items-center gap-1 shadow-[0_20px_50px_rgba(0,0,0,0.6)] pointer-events-auto ring-1 ring-white/10">
         <NavButton 
           isActive={currentView === 'rooms'} 

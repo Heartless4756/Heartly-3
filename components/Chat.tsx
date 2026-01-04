@@ -485,7 +485,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
         </div>
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto pt-24 px-4 pb-28 space-y-3 z-10 native-scroll no-scrollbar">
+        <div className="flex-1 overflow-y-auto pt-24 px-4 pb-28 space-y-3 z-10 native-scroll no-scrollbar min-h-0">
           <div className="flex justify-center mb-6">
              <div className="bg-[#1A1A21] border border-white/5 px-4 py-2 rounded-full text-[10px] font-medium text-gray-500 flex items-center gap-2 shadow-lg">
                 <Lock size={12} className="text-emerald-500" /> End-to-end encrypted.
@@ -689,8 +689,8 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
         </div>
       )}
 
-      {/* Chat List */}
-      <div className="flex-1 overflow-y-auto native-scroll no-scrollbar">
+      {/* Chat List - Added min-h-0 */}
+      <div className="flex-1 overflow-y-auto native-scroll no-scrollbar min-h-0">
           {loadingChats ? (
             <div className="flex justify-center py-10"><Loader2 className="animate-spin text-gray-500" /></div>
           ) : chats.length === 0 ? (
