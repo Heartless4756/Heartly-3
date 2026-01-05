@@ -528,7 +528,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       {showAdminPanel && isAdmin && (
         <div className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-xl flex flex-col md:flex-row overflow-hidden animate-fade-in">
             <div className="md:hidden flex items-center justify-between p-4 border-b border-white/5 flex-shrink-0"><h2 className="text-lg font-bold text-white flex items-center gap-2"><ShieldAlert size={18} className="text-red-500"/> Admin Panel</h2><button onClick={() => setShowAdminPanel(false)}><X size={24} className="text-gray-400"/></button></div>
-            <div className="md:w-64 bg-[#121216] border-b md:border-b-0 md:border-r border-white/5 flex flex-row md:flex-col flex-shrink-0 overflow-x-auto md:overflow-visible no-scrollbar p-2 gap-1 md:gap-2">
+            <div className="md:w-64 bg-[#121216] border-b md:border-b-0 md:border-r border-white/5 flex flex-row md:flex-col flex-shrink-0 native-scroll-x md:overflow-visible no-scrollbar p-2 gap-1 md:gap-2">
                 <div className="hidden md:flex items-center gap-3 p-4 mb-2"><div className="w-10 h-10 bg-red-500/10 rounded-xl flex items-center justify-center text-red-500"><ShieldAlert size={20}/></div><div><h3 className="font-bold text-white text-sm">Admin Panel</h3><p className="text-[10px] text-gray-500">System Management</p></div></div>
                 {[
                     { id: 'dashboard', label: 'Overview', icon: LayoutDashboard }, { id: 'users', label: 'User Mgmt', icon: Users }, { id: 'rooms', label: 'Rooms', icon: Mic },
