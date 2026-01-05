@@ -112,8 +112,8 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
       <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-violet-900/20 to-transparent pointer-events-none z-0" />
       <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-fuchsia-600/10 rounded-full blur-[100px] pointer-events-none z-0" />
 
-      {/* Header */}
-      <div className="px-6 py-8 relative z-10 flex flex-col justify-center flex-shrink-0">
+      {/* Header - Updated Padding for Notch */}
+      <div className="px-6 pb-8 pt-[calc(env(safe-area-inset-top)+2rem)] relative z-10 flex flex-col justify-center flex-shrink-0">
         {isSearchOpen ? (
           <div className="flex items-center gap-3 animate-fade-in">
             <button 

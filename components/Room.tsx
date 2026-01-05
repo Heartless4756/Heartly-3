@@ -884,7 +884,8 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                 <div id="svga-canvas" className="w-full h-full max-w-[500px] max-h-[500px] object-contain"></div>
             </div>
 
-            <div className="flex items-center justify-between px-4 py-4 relative z-20">
+            {/* Header - Updated Padding for Notch */}
+            <div className="flex items-center justify-between px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] relative z-20">
                 <div className="flex items-center gap-2">
                     <button onClick={onMinimize} className="p-2 text-white/80 hover:text-white rounded-full hover:bg-white/10"><Minimize2 size={20}/></button>
                     <div className="text-left flex flex-col justify-center">

@@ -416,8 +416,8 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
             <div className="absolute top-[40%] -right-[10%] w-72 h-72 bg-fuchsia-600/10 rounded-full blur-[100px]"></div>
         </div>
 
-        {/* Floating Chat Header */}
-        <div className="absolute top-4 left-4 right-4 z-30">
+        {/* Floating Chat Header - Updated Top Positioning for Notch */}
+        <div className="absolute top-[calc(env(safe-area-inset-top)+1rem)] left-4 right-4 z-30">
             <div className="bg-[#121216]/80 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-3 flex items-center justify-between shadow-2xl shadow-black/50">
                 <div className="flex items-center gap-3">
                     <button onClick={() => setActiveChatId(null)} className="p-2 -ml-2 text-gray-400 hover:text-white transition-colors rounded-full hover:bg-white/5 active:scale-90">
@@ -484,8 +484,8 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
             </div>
         </div>
 
-        {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto pt-24 px-4 pb-28 space-y-3 z-10 native-scroll no-scrollbar min-h-0">
+        {/* Messages Area - Adjusted Top Padding */}
+        <div className="flex-1 overflow-y-auto pt-[calc(env(safe-area-inset-top)+7rem)] px-4 pb-28 space-y-3 z-10 native-scroll no-scrollbar min-h-0">
           <div className="flex justify-center mb-6">
              <div className="bg-[#1A1A21] border border-white/5 px-4 py-2 rounded-full text-[10px] font-medium text-gray-500 flex items-center gap-2 shadow-lg">
                 <Lock size={12} className="text-emerald-500" /> End-to-end encrypted.
@@ -632,8 +632,8 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
       {/* Background Decor */}
       <div className="absolute top-0 right-0 w-64 h-64 bg-violet-600/10 rounded-full blur-[100px] pointer-events-none"></div>
 
-      {/* Header with Search Toggle */}
-      <div className="py-8 relative z-10 flex items-center justify-between">
+      {/* Header with Search Toggle - Updated Padding for Notch */}
+      <div className="pb-8 pt-[calc(env(safe-area-inset-top)+2rem)] relative z-10 flex items-center justify-between">
          <div>
              <h1 className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-br from-white via-violet-200 to-fuchsia-200 tracking-tight">Messages</h1>
              <p className="text-gray-500 text-xs font-bold tracking-widest uppercase mt-2 opacity-60">Your Conversations</p>
