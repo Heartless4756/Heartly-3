@@ -940,14 +940,8 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                         </div>
                     </div>
                     
-                    <div className="flex justify-between w-full gap-4 sm:gap-10 px-2 pb-2">
-                        {/* Reduced gap for smaller screens */}
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-4 sm:gap-x-4 sm:gap-y-6">
-                            {[0, 1, 4, 5].map(i => renderSeatItem(gridSeats[i]))}
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-4 sm:gap-x-4 sm:gap-y-6">
-                            {[2, 3, 6, 7].map(i => renderSeatItem(gridSeats[i]))}
-                        </div>
+                    <div className="grid grid-cols-4 gap-x-2 gap-y-6 w-full px-2 pb-4 place-items-center">
+                        {gridSeats.map(seat => renderSeatItem(seat))}
                     </div>
                  </div>
                  
