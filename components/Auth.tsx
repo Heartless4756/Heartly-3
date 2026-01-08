@@ -97,7 +97,11 @@ export const Auth: React.FC = () => {
         // App.tsx listener will pick up the auth state change
     } catch (err: any) {
         console.error("Guest Login Error:", err);
-        setError(err.message);
+        if (err.code === 'auth/admin-restricted-operation' || err.code === 'auth/operation-not-allowed') {
+            setError("Guest login is currently disabled. Please enable 'Anonymous' sign-in in the Firebase Console.");
+        } else {
+            setError(err.message);
+        }
         setLoading(false);
     }
   };
@@ -195,3 +199,4 @@ export const Auth: React.FC = () => {
     </div>
   );
 };
+    

@@ -27,7 +27,7 @@ import {
   Trash2, RotateCcw, Power, Users,
   Play, Upload, Disc3, Music2, Pause, SkipForward,
   ShieldAlert, ShieldCheck, VolumeX, UserCheck, Ban, Maximize2, Search, Settings, Smile, CheckCircle2,
-  ArrowDownToLine
+  ArrowDownToLine, Image as ImageIcon
 } from 'lucide-react';
 
 interface RoomProps {
@@ -45,7 +45,7 @@ interface Message {
   senderName: string;
   senderPhoto: string | null;
   createdAt: number;
-  type?: 'user' | 'system' | 'gift'; 
+  type?: 'user' | 'system' | 'gift' | 'image'; 
   giftIcon?: string;
   giftName?: string;
   giftAnimationUrl?: string;
@@ -286,6 +286,11 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
     // Stickers State
     const [showStickerPicker, setShowStickerPicker] = useState(false);
     const [stickers, setStickers] = useState<Sticker[]>([]);
+
+    // Image Upload State
+    const [isUploadingChatImage, setIsUploadingChatImage] = useState(false);
+    const chatImageInputRef = useRef<HTMLInputElement>(null);
+    const [expandedImage, setExpandedImage] = useState<string | null>(null);
 
     // Gift Animation State
     const [giftAnimation, setGiftAnimation] = useState<{ icon: string; name: string; senderName: string } | null>(null);
@@ -788,6 +793,37 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
               else await updateDoc(doc(db, 'rooms', roomId), { 'musicState.queue': arrayUnion(newSong) });
           } catch (err: any) { alert("Upload failed."); } finally { setIsUploadingMusic(false); }
     };
+    
+    // --- CHAT IMAGE UPLOAD LOGIC ---
+    const handleChatImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setIsUploadingChatImage(true);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('upload_preset', 'Heartly image');
+            const res = await fetch(`https://api.cloudinary.com/v1_1/dtxvdtt78/image/upload`, { method: 'POST', body: formData });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error.message);
+            
+            await addDoc(collection(db, 'rooms', roomId, 'messages'), {
+                text: data.secure_url, 
+                senderId: currentUser.uid,
+                senderName: currentUser.displayName,
+                senderPhoto: currentUser.photoURL,
+                createdAt: Date.now(),
+                type: 'image' 
+            });
+        } catch (e) {
+            console.error("Image upload failed", e);
+            alert("Failed to upload image.");
+        } finally {
+            setIsUploadingChatImage(false);
+            if (chatImageInputRef.current) chatImageInputRef.current.value = '';
+        }
+    };
+
     const searchMusic = async (e: React.FormEvent) => { e.preventDefault(); if (!musicSearchQuery.trim()) return; setIsSearchingMusic(true); try { const response = await fetch(`https://api.jamendo.com/v3.0/tracks/?client_id=c9720322&format=jsonpretty&limit=20&imagesize=200&tags=${encodeURIComponent(musicSearchQuery)}&include=musicinfo`); const data = await response.json(); if (data.results) setMusicSearchResults(data.results); } catch (error) { console.error(error); } finally { setIsSearchingMusic(false); } };
     const addTrackToQueue = async (track: any) => {
           const newSong: Song = { id: track.id, url: track.audio, name: track.name, artist: track.artist_name, duration: track.duration, addedBy: currentUser.uid, addedByName: currentUser.displayName || 'User' };
@@ -1009,7 +1045,42 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                  </div>
                  
                  {/* Chat Area - Takes remaining space */}
-                 <div className="flex-1 px-4 pb-2 mt-1 mask-gradient-top overflow-y-auto no-scrollbar native-scroll space-y-2 min-h-0 w-full max-w-lg mx-auto">{messages.map((msg) => (<div key={msg.id} className={`text-xs animate-fade-in ${msg.type === 'system' ? 'text-yellow-400 font-medium text-center bg-yellow-400/5 py-1 rounded-lg' : msg.type === 'gift' ? 'text-center my-2' : 'text-white'}`}>{msg.type === 'system' ? (msg.text) : msg.type === 'gift' ? (<div className="inline-block bg-gradient-to-r from-violet-600/80 to-fuchsia-600/80 px-3 py-1.5 rounded-full border border-white/20 backdrop-blur-sm shadow-lg"><span className="font-bold text-white">{msg.senderName}</span> <span className="text-white/90">{msg.text}</span></div>) : (<div className="flex items-start gap-2 bg-black/40 p-2 rounded-xl w-fit max-w-[85%] backdrop-blur-sm border border-white/5"><div className="relative w-5 h-5"><img src={msg.senderPhoto || `https://ui-avatars.com/api/?name=${msg.senderName}`} className="w-full h-full rounded-full object-cover" /></div><div><span className="font-bold text-gray-400 mr-1.5 block leading-tight mb-0.5">{msg.senderName}</span><span className="text-gray-100 leading-snug">{msg.text}</span></div></div>)}</div>))}<div ref={chatEndRef} /></div>
+                 <div className="flex-1 px-4 pb-2 mt-1 mask-gradient-top overflow-y-auto no-scrollbar native-scroll space-y-2 min-h-0 w-full max-w-lg mx-auto">
+                    {messages.map((msg) => (
+                        <div key={msg.id} className={`text-xs animate-fade-in ${msg.type === 'system' ? 'text-yellow-400 font-medium text-center bg-yellow-400/5 py-1 rounded-lg' : msg.type === 'gift' ? 'text-center my-2' : 'text-white'}`}>
+                            {msg.type === 'system' ? (
+                                msg.text
+                            ) : msg.type === 'gift' ? (
+                                <div className="inline-block bg-gradient-to-r from-violet-600/80 to-fuchsia-600/80 px-3 py-1.5 rounded-full border border-white/20 backdrop-blur-sm shadow-lg">
+                                    <span className="font-bold text-white">{msg.senderName}</span> <span className="text-white/90">{msg.text}</span>
+                                </div>
+                            ) : msg.type === 'image' ? (
+                                <div className="flex items-start gap-2 bg-black/40 p-2 rounded-xl w-fit max-w-[85%] backdrop-blur-sm border border-white/5">
+                                    <div className="relative w-5 h-5 flex-shrink-0">
+                                        <img src={msg.senderPhoto || `https://ui-avatars.com/api/?name=${msg.senderName}`} className="w-full h-full rounded-full object-cover" />
+                                    </div>
+                                    <div className="flex flex-col items-start gap-1">
+                                        <span className="font-bold text-gray-400 leading-tight block">{msg.senderName}</span>
+                                        <div className="rounded-lg overflow-hidden cursor-pointer active:scale-95 transition-transform" onClick={() => setExpandedImage(msg.text)}>
+                                             <img src={msg.text} className="w-32 h-32 object-cover hover:opacity-90 transition-opacity" alt="Chat Attachment" />
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex items-start gap-2 bg-black/40 p-2 rounded-xl w-fit max-w-[85%] backdrop-blur-sm border border-white/5">
+                                    <div className="relative w-5 h-5 flex-shrink-0">
+                                        <img src={msg.senderPhoto || `https://ui-avatars.com/api/?name=${msg.senderName}`} className="w-full h-full rounded-full object-cover" />
+                                    </div>
+                                    <div>
+                                        <span className="font-bold text-gray-400 mr-1.5 block leading-tight mb-0.5">{msg.senderName}</span>
+                                        <span className="text-gray-100 leading-snug">{msg.text}</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                    <div ref={chatEndRef} />
+                 </div>
             </div>
 
             {/* Bottom Controls Area - Fixed Height, Safe Area Aware */}
@@ -1022,8 +1093,40 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                 </button>
                 
                 {roomData?.musicState?.isEnabled && (<button onClick={() => setShowMusicModal(true)} className={`p-2.5 rounded-full flex-shrink-0 transition-all backdrop-blur-md shadow-lg ${roomData.musicState.isPlaying ? 'bg-violet-500 shadow-[0_0_15px_rgba(139,92,246,0.5)] animate-pulse-glow text-white' : 'bg-black/40 border border-white/10 text-white'}`}><Music2 size={20} /></button>)}
-                <div className="flex-1 relative shadow-lg flex items-center bg-black/40 backdrop-blur-md border border-white/10 rounded-full pl-2 pr-2 py-1.5"><button onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 text-yellow-400 hover:text-yellow-300 rounded-full transition-colors active:scale-95"><Smile size={20} /></button><form onSubmit={handleSendMessage} className="flex-1 flex items-center"><input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Say something..." className="w-full bg-transparent border-none outline-none pl-2 pr-2 py-1 text-xs text-white placeholder-gray-400" /><button type="submit" disabled={!newMessage.trim()} className="p-1.5 bg-violet-600 rounded-full text-white disabled:opacity-50 flex-shrink-0 ml-1"><Send size={12} fill="currentColor" /></button></form></div>{isOnSeat && (<button onClick={toggleMute} disabled={myPart?.isHostMuted} className={`p-2.5 rounded-full transition-all active:scale-95 border flex-shrink-0 shadow-lg backdrop-blur-md ${isMuted ? 'bg-black/40 text-white border-white/10' : 'bg-white text-black border-white shadow-[0_0_10px_rgba(255,255,255,0.4)]'}`}>{myPart?.isHostMuted ? <Lock size={20} className="text-red-500" /> : isMuted ? <MicOff size={20} /> : <Mic size={20} />}</button>)}</div>
+                
+                <div className="flex-1 relative shadow-lg flex items-center bg-black/40 backdrop-blur-md border border-white/10 rounded-full pl-2 pr-2 py-1.5">
+                    <button onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 text-yellow-400 hover:text-yellow-300 rounded-full transition-colors active:scale-95 flex-shrink-0"><Smile size={20} /></button>
+                    
+                    {/* Image Upload Button */}
+                    <button onClick={() => chatImageInputRef.current?.click()} className="p-1.5 text-cyan-400 hover:text-cyan-300 rounded-full transition-colors active:scale-95 flex-shrink-0" disabled={isUploadingChatImage}>
+                        {isUploadingChatImage ? <Loader2 size={20} className="animate-spin" /> : <ImageIcon size={20} />}
+                    </button>
+                    <input type="file" ref={chatImageInputRef} className="hidden" accept="image/*" onChange={handleChatImageUpload} />
+
+                    <form onSubmit={handleSendMessage} className="flex-1 flex items-center">
+                        <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Say something..." className="w-full bg-transparent border-none outline-none pl-2 pr-2 py-1 text-xs text-white placeholder-gray-400" />
+                        <button type="submit" disabled={!newMessage.trim()} className="p-1.5 bg-violet-600 rounded-full text-white disabled:opacity-50 flex-shrink-0 ml-1"><Send size={12} fill="currentColor" /></button>
+                    </form>
+                </div>
+                
+                {isOnSeat && (<button onClick={toggleMute} disabled={myPart?.isHostMuted} className={`p-2.5 rounded-full transition-all active:scale-95 border flex-shrink-0 shadow-lg backdrop-blur-md ${isMuted ? 'bg-black/40 text-white border-white/10' : 'bg-white text-black border-white shadow-[0_0_10px_rgba(255,255,255,0.4)]'}`}>{myPart?.isHostMuted ? <Lock size={20} className="text-red-500" /> : isMuted ? <MicOff size={20} /> : <Mic size={20} />}</button>)}
+            </div>
             
+            {/* Full Screen Image Modal */}
+            {expandedImage && (
+                <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center animate-fade-in p-4" onClick={() => setExpandedImage(null)}>
+                    <div className="relative max-w-full max-h-full" onClick={e => e.stopPropagation()}>
+                        <img src={expandedImage} className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" alt="Full view" />
+                        <button 
+                            onClick={() => setExpandedImage(null)}
+                            className="absolute -top-12 right-0 sm:-right-12 bg-white/10 hover:bg-white/20 text-white p-2 rounded-full backdrop-blur-md transition-colors"
+                        >
+                            <XIcon size={24} />
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {showViewerList && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md p-4 animate-fade-in" onClick={() => setShowViewerList(false)}><div className="bg-[#18181B] h-full w-full max-w-sm mx-auto rounded-3xl border border-white/10 shadow-2xl flex flex-col overflow-hidden max-h-[80dvh]" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-white/5 flex justify-between items-center"><h3 className="font-bold text-white flex items-center gap-2"><Users size={18} /> Viewers ({participants.length})</h3><button onClick={() => setShowViewerList(false)}><XIcon size={20} className="text-gray-400" /></button></div><div className="flex-1 overflow-y-auto p-2 space-y-2 native-scroll">{sortedViewerList.map(p => (<div key={p.uid} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5" onClick={() => setViewingProfileUid(p.uid)}><div className="flex items-center gap-3"><div className="relative w-10 h-10"><img src={p.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover" /></div><div><p className="font-bold text-sm text-white flex items-center gap-1">{p.displayName}{p.uid === roomData?.createdBy && <Crown size={12} className="text-yellow-500" fill="currentColor" />}{roomData?.admins?.includes(p.uid) && <ShieldCheck size={12} className="text-violet-500" />}</p><p className="text-[10px] text-gray-400">{p.seatIndex === 999 ? 'Host' : p.seatIndex >= 0 ? `Seat ${p.seatIndex + 1}` : 'Audience'}</p></div></div>{(isHost || isAdmin) && p.uid !== currentUser.uid && p.uid !== roomData?.createdBy && (<div className="flex gap-2">{p.seatIndex >= 0 && (<button onClick={(e) => { e.stopPropagation(); updateParticipantData(p.uid, { seatIndex: -1 }); }} className="p-2 bg-red-500/10 text-red-500 rounded-lg"><LogOut size={14}/></button>)}<button onClick={(e) => { e.stopPropagation(); setViewingProfileUid(p.uid); }} className="p-2 bg-white/10 text-white rounded-lg"><MoreHorizontal size={14}/></button></div>)}</div>))}</div></div></div>)}
             {viewingProfileUid && currentUser && (<UserProfileModal targetUid={viewingProfileUid} currentUser={currentUser} onClose={() => setViewingProfileUid(null)} isViewerHost={isHost} isViewerAdmin={isAdmin} roomAdmins={roomData?.admins || []} roomId={roomId} currentParticipants={participants} roomCreatorId={roomData?.createdBy || ''} />)}
             {/* ... Other modals are assumed to be here as standard ... */}
