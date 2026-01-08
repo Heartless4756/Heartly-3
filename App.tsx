@@ -36,10 +36,8 @@ const App: React.FC = () => {
   });
   
   // -- STATE PERSISTENCE & INITIALIZATION --
-  const [currentView, setCurrentView] = useState<ViewState>(() => {
-      const saved = localStorage.getItem('heartly_currentView');
-      return (saved as ViewState) || 'rooms';
-  });
+  // Changed initialization to always start at 'rooms' per request
+  const [currentView, setCurrentView] = useState<ViewState>('rooms');
   
   const [activeRoomId, setActiveRoomId] = useState<string | null>(() => {
       return localStorage.getItem('heartly_activeRoomId');
@@ -120,13 +118,14 @@ const App: React.FC = () => {
     }
     audioRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2346/2346-preview.mp3");
     
+    // Always enforce 'rooms' view on mount if no active room state overrides strictly
+    // But local state initialization already handles the view.
+    // We update history to reflect the Forced 'rooms' view.
     if (activeRoomId) {
-        window.history.replaceState({ view: currentView }, '');
-        window.history.pushState({ view: currentView, roomId: activeRoomId }, '');
+        window.history.replaceState({ view: 'rooms' }, ''); // Base state is rooms
+        window.history.pushState({ view: 'rooms', roomId: activeRoomId }, '');
     } else {
-        if (!window.history.state) {
-            window.history.replaceState({ view: currentView }, '');
-        }
+        window.history.replaceState({ view: 'rooms' }, '');
     }
   }, []); 
 
@@ -190,7 +189,8 @@ const App: React.FC = () => {
             email: currentUser.email,
             displayName: currentUser.displayName,
             photoURL: currentUser.photoURL,
-            phoneNumber: currentUser.phoneNumber
+            phoneNumber: currentUser.phoneNumber,
+            isAnonymous: currentUser.isAnonymous
         };
         localStorage.setItem(CACHE_KEY_AUTH, JSON.stringify(serializableUser));
       } else {
@@ -232,18 +232,31 @@ const App: React.FC = () => {
                 setLoading(false); 
             }
         } else {
+            // Profile doesn't exist - create it (Fallback for Auth.tsx race condition)
             const uniqueId = Math.random().toString(36).substring(2, 6).toUpperCase();
+            
+            let finalDisplayName = user.displayName;
+            if (!finalDisplayName) {
+                if (user.isAnonymous) {
+                    finalDisplayName = `Guest ${uniqueId}`;
+                } else {
+                    finalDisplayName = 'User';
+                }
+            }
+
             const newUserProfile = {
                 uid: user.uid,
-                displayName: user.displayName,
+                displayName: finalDisplayName,
                 email: user.email,
                 photoURL: user.photoURL,
                 uniqueId: uniqueId,
-                bio: '',
+                bio: user.isAnonymous ? 'Just visiting.' : '',
                 followers: [],
                 following: [],
-                walletBalance: 0
+                walletBalance: 100, // Starting balance
+                isAnonymous: user.isAnonymous
             };
+            
             setDoc(userDocRef, newUserProfile);
             setDbUser(newUserProfile);
             localStorage.setItem(CACHE_KEY_PROFILE, JSON.stringify(newUserProfile));
