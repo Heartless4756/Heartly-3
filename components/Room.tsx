@@ -845,7 +845,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
 
     const renderSeatItem = (seat: typeof gridSeats[0]) => (
         <div key={seat.index} className="flex flex-col items-center gap-1 cursor-pointer relative" onClick={(e) => handleSeatClick(seat.index, e)}>
-            <div className="relative w-12 h-12 sm:w-14 sm:h-14">
+            <div className="relative w-14 h-14 sm:w-16 sm:h-16">
                 <div className="w-full h-full rounded-full bg-white/5 border border-white/10 flex items-center justify-center relative overflow-hidden transition-all active:scale-95">
                     {roomData?.lockedSeats?.includes(seat.index) ? (
                         <Lock size={16} className="text-white/20" />
@@ -912,9 +912,9 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                  {giftAnimation && (<div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none overflow-hidden"><div className="absolute inset-0 bg-radial-gradient from-violet-600/30 to-transparent animate-pulse duration-700"></div><div className="absolute inset-0 flex items-center justify-center">{[...Array(12)].map((_, i) => (<div key={i} className="absolute w-2 h-2 bg-yellow-400 rounded-full animate-[ping_1.5s_infinite]" style={{ transform: `rotate(${i * 30}deg) translate(120px) scale(${Math.random()})`, animationDelay: `${Math.random() * 0.5}s` }}></div>))}</div><div className="relative flex flex-col items-center animate-[fadeIn_0.5s_ease-out_forwards]"><div className="w-32 h-32 mb-4 filter drop-shadow-[0_20px_30px_rgba(0,0,0,0.6)] animate-[bounce_2s_infinite]"><img src={giftAnimation.icon} className="w-full h-full object-contain" /></div><div className="mt-8 bg-black/60 backdrop-blur-xl border border-white/20 px-6 py-3 rounded-full shadow-2xl animate-fade-in text-center transform scale-110"><p className="text-white font-bold text-lg leading-tight bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-orange-300 to-yellow-300 animate-pulse">{giftAnimation.senderName}</p><p className="text-white/80 text-xs font-medium uppercase tracking-widest mt-1">sent {giftAnimation.name}</p></div></div></div>)}
                  
                  {/* Grid Container - Added max-h constraint for small screens */}
-                 <div className="flex-shrink-0 flex flex-col items-center mt-1 px-4 max-w-md mx-auto w-full z-10 max-h-[55vh] sm:max-h-[60vh] overflow-y-auto native-scroll no-scrollbar">
-                    <div className="flex justify-center mb-4 sm:mb-8 relative flex-shrink-0">
-                        <div className="relative group cursor-pointer w-16 h-16 sm:w-20 sm:h-20" onClick={(e) => handleSeatClick(999, e)}>
+                 <div className="flex-shrink-0 flex flex-col items-center mt-1 px-4 max-w-md mx-auto w-full z-10 max-h-[60vh] sm:max-h-[65vh] overflow-y-auto native-scroll no-scrollbar">
+                    <div className="flex justify-center mb-4 sm:mb-6 relative flex-shrink-0">
+                        <div className="relative group cursor-pointer w-20 h-20 sm:w-24 sm:h-24" onClick={(e) => handleSeatClick(999, e)}>
                             <div className="w-full h-full rounded-full border-4 border-yellow-500/30 bg-black/40 flex items-center justify-center relative overflow-hidden shadow-[0_0_30px_rgba(234,179,8,0.2)] transition-all active:scale-95">
                                 {hostSeatOccupant ? (
                                     <>
@@ -940,8 +940,26 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                         </div>
                     </div>
                     
-                    <div className="grid grid-cols-4 gap-x-2 gap-y-6 w-full px-2 pb-4 place-items-center">
-                        {gridSeats.map(seat => renderSeatItem(seat))}
+                    {/* Split Grid - 2 Separate blocks with Gap */}
+                    <div className="flex justify-between w-full px-2 mt-4 pb-4">
+                        {/* Left Block */}
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-6">
+                            {renderSeatItem(gridSeats[0])}
+                            {renderSeatItem(gridSeats[1])}
+                            {renderSeatItem(gridSeats[4])}
+                            {renderSeatItem(gridSeats[5])}
+                        </div>
+
+                        {/* Middle Spacer */}
+                        <div className="w-4"></div>
+
+                        {/* Right Block */}
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-6">
+                            {renderSeatItem(gridSeats[2])}
+                            {renderSeatItem(gridSeats[3])}
+                            {renderSeatItem(gridSeats[6])}
+                            {renderSeatItem(gridSeats[7])}
+                        </div>
                     </div>
                  </div>
                  
