@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { db } from '../firebase';
 import { 
@@ -315,6 +316,40 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
     const candidateQueueRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
     const initialChargeProcessed = useRef(false);
 
+    // Initial Join Logic - Run Once
+    useEffect(() => {
+        const joinRoom = async () => {
+            if (!roomId || !currentUser) return;
+            try {
+                const roomRef = doc(db, 'rooms', roomId);
+                const roomSnap = await getDoc(roomRef);
+                if (roomSnap.exists()) {
+                    const data = roomSnap.data() as ExtendedRoomType;
+                    const isAlreadyJoined = data.participants?.some(p => p.uid === currentUser.uid);
+                    
+                    if (!isAlreadyJoined) {
+                        const isCreator = data.createdBy === currentUser.uid;
+                        const participant: Participant = { 
+                             uid: currentUser.uid, 
+                             displayName: currentUser.displayName || 'Guest', 
+                             photoURL: currentUser.photoURL, 
+                             isMuted: true, 
+                             isHostMuted: false, 
+                             seatIndex: isCreator ? 999 : -1, 
+                             joinedAt: Date.now(), 
+                             lastSeen: Date.now(), 
+                             frameUrl: currentUser.frameUrl || null
+                        };
+                        await updateDoc(roomRef, { participants: arrayUnion(participant) });
+                    }
+                }
+            } catch (e) {
+                console.error("Error joining room:", e);
+            }
+        };
+        joinRoom();
+    }, [roomId, currentUser.uid]);
+
     useEffect(() => {
         participantsRef.current = participants;
         if (!isInitialLoadRef.current) {
@@ -533,22 +568,9 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
               setRoomData({ id: snapshot.id, ...data });
               const currentParts = data.participants || [];
               setParticipants(currentParts);
+              
               const myPart = currentParts.find(p => p.uid === currentUser.uid);
-              if (!myPart) {
-                 const isCreator = data.createdBy === currentUser.uid;
-                 const participant: Participant = { 
-                     uid: currentUser.uid, 
-                     displayName: currentUser.displayName || 'Guest', 
-                     photoURL: currentUser.photoURL, 
-                     isMuted: true, 
-                     isHostMuted: false, 
-                     seatIndex: isCreator ? 999 : -1, 
-                     joinedAt: Date.now(), 
-                     lastSeen: Date.now(),
-                     frameUrl: currentUser.frameUrl || null 
-                 };
-                  await updateDoc(roomRef, { participants: arrayUnion(participant) });
-              } else {
+              if (myPart) {
                  const isOnSeat = myPart.seatIndex >= 0 || myPart.seatIndex === 999;
                  if (localStreamRef.current) { if (!isOnSeat || myPart.isHostMuted || (myPart.isMuted && !isMuted)) { localStreamRef.current.getAudioTracks().forEach(t => t.enabled = false); setIsMuted(true); } }
               }

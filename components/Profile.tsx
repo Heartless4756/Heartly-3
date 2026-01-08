@@ -7,7 +7,7 @@ import {
   LogOut, Edit2, ChevronRight, Shield, Loader2, Copy, CheckCircle2, Camera, Coins, Wallet, X, CreditCard, Users, 
   UserCheck, UserPlus, ShieldAlert, ShieldCheck, Search, Ban, HelpCircle, ChevronDown, ChevronUp, UserX, 
   Smile, Image as ImageIcon, Gift, ShoppingBag, Frame as FrameIcon, LayoutDashboard, Mic, Headphones, Flag, 
-  AlertTriangle, Megaphone, Plus, Trash2, Upload, PowerOff, Zap
+  AlertTriangle, Megaphone, Plus, Trash2, Upload, PowerOff, Zap, ArrowLeft
 } from 'lucide-react';
 
 interface ProfileProps {
@@ -328,6 +328,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       const activeListenersSnap = await getDocs(collection(db, 'activeListeners'));
       setAdminOnlineListeners(activeListenersSnap.docs.map(d => ({ ...d.data(), uid: d.id } as ActiveListener)));
 
+      // Fetch 20 Recent Users specifically for the User Management Tab
       const usersQuery = query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(20));
       const usersSnap = await getDocs(usersQuery);
       setRecentUsers(usersSnap.docs.map(d => ({ ...d.data(), uid: d.id } as UserProfile)));
@@ -356,7 +357,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       if (sysDoc.exists()) setMaintenanceMode(sysDoc.data().maintenanceMode || false);
 
       setStats({
-        totalUsers: 100 + usersSnap.size, 
+        totalUsers: 100 + usersSnap.size, // Basic offset for demo
         activeRooms: roomsSnap.docs.filter(d => d.data().active).length,
         onlineListeners: activeListenersSnap.size,
         totalCoins: usersSnap.docs.reduce((acc, curr) => acc + (curr.data().walletBalance || 0), 0),
@@ -421,12 +422,45 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
 
   const renderAdminUsers = () => (
       <div className="h-full flex flex-col p-4 md:p-8 animate-fade-in">
-          <form onSubmit={async (e) => { e.preventDefault(); if(!adminTargetEmail) return; setLoading(true); try { const q = query(collection(db, 'users'), where('email', '==', adminTargetEmail)); const snap = await getDocs(q); if(!snap.empty) { const d = snap.docs[0].data() as UserProfile; setFetchedAdminUser(d); setAdminEditName(d.displayName || ''); setAdminEditBio(d.bio || ''); } else { setFetchedAdminUser(null); alert("User not found"); } } catch(e) { console.error(e); } finally { setLoading(false); } }} className="flex gap-2 mb-6 flex-shrink-0">
-              <input type="text" value={adminTargetEmail} onChange={(e) => setAdminTargetEmail(e.target.value)} placeholder="User Email..." className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white" />
-              <button type="submit" disabled={loading} className="bg-violet-600 px-6 rounded-xl text-white font-bold">Search</button>
+          <form onSubmit={async (e) => { 
+              e.preventDefault(); 
+              if(!adminTargetEmail.trim()) return; 
+              setLoading(true); 
+              try { 
+                  let q;
+                  // If it looks like an email, search by email. Otherwise, uniqueId.
+                  if (adminTargetEmail.includes('@')) {
+                      q = query(collection(db, 'users'), where('email', '==', adminTargetEmail));
+                  } else {
+                      q = query(collection(db, 'users'), where('uniqueId', '==', adminTargetEmail.toUpperCase().trim()));
+                  }
+                  
+                  const snap = await getDocs(q); 
+                  if(!snap.empty) { 
+                      const d = snap.docs[0].data() as UserProfile; 
+                      setFetchedAdminUser(d); 
+                      setAdminEditName(d.displayName || ''); 
+                      setAdminEditBio(d.bio || ''); 
+                  } else { 
+                      setFetchedAdminUser(null); 
+                      alert("User not found"); 
+                  } 
+              } catch(e) { 
+                  console.error(e); 
+              } finally { 
+                  setLoading(false); 
+              } 
+          }} className="flex gap-2 mb-6 flex-shrink-0">
+              <input type="text" value={adminTargetEmail} onChange={(e) => setAdminTargetEmail(e.target.value)} placeholder="Email or Unique ID (4 chars)..." className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-violet-500 outline-none" />
+              <button type="submit" disabled={loading} className="bg-violet-600 px-6 rounded-xl text-white font-bold hover:bg-violet-500 transition-colors">Search</button>
           </form>
+          
           {fetchedAdminUser ? (
               <div className="bg-[#121216] border border-white/10 rounded-2xl p-6 flex-1 overflow-y-auto native-scroll">
+                   <div className="flex items-center gap-4 mb-6">
+                       <button onClick={() => setFetchedAdminUser(null)} className="p-2 bg-white/5 rounded-full hover:bg-white/10 text-white"><ArrowLeft size={18} /></button>
+                       <h3 className="text-xl font-bold text-white">User Details</h3>
+                   </div>
                    <div className="flex items-center gap-6 mb-8"><div className="relative group w-24 h-24"><img src={fetchedAdminUser.photoURL || ''} className="w-full h-full rounded-2xl bg-gray-800 object-cover border-4 border-[#25252D]" />{fetchedAdminUser.frameUrl && <img src={fetchedAdminUser.frameUrl} className="absolute inset-0 w-full h-full scale-[1.3] object-contain" />}</div><div><h3 className="text-2xl font-bold text-white">{fetchedAdminUser.displayName}</h3><p className="text-gray-500 text-sm">{fetchedAdminUser.email}</p><p className="text-violet-400 font-mono mt-1">ID: {fetchedAdminUser.uniqueId}</p></div></div>
                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                        <div className="space-y-4">
@@ -442,7 +476,33 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                        </div>
                    </div>
               </div>
-          ) : <div className="flex flex-col items-center justify-center h-full text-gray-500 flex-1"><Search size={48} className="mb-4 opacity-50"/><p>Search user by email</p></div>}
+          ) : (
+              <div className="flex-1 overflow-y-auto native-scroll">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-white font-bold flex items-center gap-2"><Users size={18} className="text-violet-400"/> New Users (20)</h3>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {recentUsers.map(u => (
+                          <div 
+                            key={u.uid} 
+                            onClick={() => {
+                                setFetchedAdminUser(u);
+                                setAdminEditName(u.displayName || '');
+                                setAdminEditBio(u.bio || '');
+                            }} 
+                            className="bg-[#1A1A21] p-3 rounded-xl border border-white/5 flex items-center gap-3 cursor-pointer hover:bg-white/10 transition-colors"
+                          >
+                              <img src={u.photoURL || `https://ui-avatars.com/api/?name=${u.displayName}`} className="w-10 h-10 rounded-full bg-gray-800 object-cover" />
+                              <div className="min-w-0">
+                                  <p className="text-sm text-white font-bold truncate">{u.displayName}</p>
+                                  <p className="text-[10px] text-gray-500 font-mono">@{u.uniqueId}</p>
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          )}
+          
           {showAssignFrameModal && (
               <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 p-4">
                   <div className="bg-[#1A1A21] w-full max-w-md rounded-2xl border border-white/10 p-6 shadow-2xl max-h-[80dvh] overflow-hidden flex flex-col">
