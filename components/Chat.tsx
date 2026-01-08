@@ -10,7 +10,7 @@ import {
   Search, MessageSquare, ChevronLeft, Send, Lock, 
   ShieldCheck, MoreVertical, Hash, ChevronRight,
   Trash2, Check, CheckCheck, Mic, ArrowRight, X, Loader2,
-  Ban, Eraser, UserX
+  Ban, Eraser, UserX, Image as ImageIcon, Wallpaper
 } from 'lucide-react';
 
 interface ChatProps {
@@ -58,6 +58,14 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
   // Typing State
   const [isTyping, setIsTyping] = useState(false);
   const [isOtherUserTyping, setIsOtherUserTyping] = useState(false);
+  
+  // Wallpapers & Media
+  const [chatWallpaper, setChatWallpaper] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [expandedImage, setExpandedImage] = useState<string | null>(null);
+  
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const wallpaperInputRef = useRef<HTMLInputElement>(null);
   
   // Long Press & Delete State
   const [longPressedChatId, setLongPressedChatId] = useState<string | null>(null);
@@ -139,28 +147,31 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     });
 
-    // 2. Listen for Typing Status on the Chat Document
+    // 2. Listen for Chat Metadata (Typing & Wallpaper)
     const chatDocRef = doc(db, 'chats', activeChatId);
     const unsubscribeChat = onSnapshot(chatDocRef, (snapshot) => {
         if (snapshot.exists()) {
             const data = snapshot.data();
+            
+            // Typing Logic
             const typingData = data.typing || {};
-            // Check if the OTHER person is typing
             const otherUid = activeChatUser?.uid;
             if (otherUid && typingData[otherUid]) {
                 setIsOtherUserTyping(true);
-                // Scroll to show the typing bubble
                 setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
             } else {
                 setIsOtherUserTyping(false);
             }
+
+            // Wallpaper Logic
+            const wallpapers = data.wallpapers || {};
+            setChatWallpaper(wallpapers[currentUser.uid] || null);
         }
     });
 
     return () => {
         unsubscribeMessages();
         unsubscribeChat();
-        // Clear typing timeout on unmount
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
   }, [activeChatId, activeChatUser, currentUser.uid]);
@@ -214,7 +225,8 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
         lastMessageTime: Date.now(),
         updatedAt: Date.now(),
         typing: { [currentUser.uid]: false, [targetUser.uid]: false },
-        unreadCounts: { [currentUser.uid]: 0, [targetUser.uid]: 0 }
+        unreadCounts: { [currentUser.uid]: 0, [targetUser.uid]: 0 },
+        wallpapers: {} 
       });
     }
 
@@ -223,6 +235,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
     setSearchId('');
     setFoundUser(null);
     setIsSearchOpen(false);
+    setChatWallpaper(null); // Reset until loaded
   };
 
   const handleTyping = async () => {
@@ -250,6 +263,88 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
             });
           } catch(e) { console.error("Error clearing typing", e); }
       }, 2000);
+  };
+
+  const uploadToCloudinary = async (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', 'Heartly image');
+      const response = await fetch(`https://api.cloudinary.com/v1_1/dtxvdtt78/image/upload`, { method: 'POST', body: formData });
+      const data = await response.json();
+      return data.secure_url;
+  };
+
+  const handleChatImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !activeChatId || !activeChatUser) return;
+      
+      setIsUploading(true);
+      try {
+          const url = await uploadToCloudinary(file);
+          // Encrypt the URL just like text to keep logic consistent
+          const encryptedUrl = simpleEncrypt(url, ENCRYPTION_KEY);
+          
+          await addDoc(collection(db, 'chats', activeChatId, 'messages'), {
+            text: encryptedUrl,
+            senderId: currentUser.uid,
+            createdAt: Date.now(),
+            read: false,
+            type: 'image'
+          });
+
+          await updateDoc(doc(db, 'chats', activeChatId), {
+            lastMessage: 'Sent a photo',
+            lastMessageTime: Date.now(),
+            updatedAt: Date.now(),
+            [`unreadCounts.${activeChatUser.uid}`]: increment(1)
+          });
+      } catch(e) {
+          console.error("Image upload failed", e);
+          alert("Failed to send image.");
+      } finally {
+          setIsUploading(false);
+          if (imageInputRef.current) imageInputRef.current.value = '';
+      }
+  };
+
+  const handleWallpaperUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !activeChatId) return;
+
+      setIsUploading(true);
+      setShowChatMenu(false);
+      try {
+          const url = await uploadToCloudinary(file);
+          await updateDoc(doc(db, 'chats', activeChatId), {
+              [`wallpapers.${currentUser.uid}`]: url
+          });
+      } catch(e) {
+          console.error("Wallpaper upload failed", e);
+          alert("Failed to change wallpaper.");
+      } finally {
+          setIsUploading(false);
+          if (wallpaperInputRef.current) wallpaperInputRef.current.value = '';
+      }
+  };
+
+  const removeWallpaper = async () => {
+      if (!activeChatId) return;
+      setShowChatMenu(false);
+      try {
+          // Using dot notation to delete map field is tricky in firestore without replacing map
+          // Easier to set it to null or empty string
+          // Or use FieldValue.delete() on the nested field
+          // NOTE: Firestore update nested field delete needs dot notation
+          const chatRef = doc(db, 'chats', activeChatId);
+          // We can just set it to null or use 'delete' logic if we imported FieldValue
+          // For simplicity here, setting to null works if our check allows it, or just empty string.
+          // Let's rely on overwriting for now or use a "null" string
+          await updateDoc(chatRef, {
+              [`wallpapers.${currentUser.uid}`]: null
+          });
+      } catch(e) {
+          console.error(e);
+      }
   };
 
   const sendMessage = async (e: React.FormEvent) => {
@@ -416,10 +511,24 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
   if (activeChatId && activeChatUser) {
     return (
       <div className="fixed inset-0 z-[60] flex flex-col bg-[#050505] text-white animate-fade-in">
+        {/* Custom Wallpaper or Default Gradient */}
         <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-            <div className="absolute -top-[10%] -left-[10%] w-64 h-64 bg-violet-600/10 rounded-full blur-[80px]"></div>
-            <div className="absolute top-[40%] -right-[10%] w-72 h-72 bg-fuchsia-600/10 rounded-full blur-[100px]"></div>
+            {chatWallpaper ? (
+                <>
+                    <img src={chatWallpaper} className="w-full h-full object-cover opacity-60" />
+                    <div className="absolute inset-0 bg-black/40"></div>
+                </>
+            ) : (
+                <>
+                    <div className="absolute -top-[10%] -left-[10%] w-64 h-64 bg-violet-600/10 rounded-full blur-[80px]"></div>
+                    <div className="absolute top-[40%] -right-[10%] w-72 h-72 bg-fuchsia-600/10 rounded-full blur-[100px]"></div>
+                </>
+            )}
         </div>
+
+        {/* Hidden Inputs */}
+        <input type="file" ref={imageInputRef} className="hidden" accept="image/*" onChange={handleChatImageUpload} />
+        <input type="file" ref={wallpaperInputRef} className="hidden" accept="image/*" onChange={handleWallpaperUpload} />
 
         {/* Header */}
         <div className="absolute top-[calc(env(safe-area-inset-top)+1rem)] left-4 right-4 z-30">
@@ -464,6 +573,14 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
                         <>
                             <div className="fixed inset-0 z-40" onClick={() => setShowChatMenu(false)} />
                             <div className="absolute right-0 top-full mt-2 w-48 bg-[#1A1A23] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in">
+                                <button onClick={() => wallpaperInputRef.current?.click()} className="w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-colors">
+                                    <Wallpaper size={14} /> Change Wallpaper
+                                </button>
+                                {chatWallpaper && (
+                                    <button onClick={removeWallpaper} className="w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-colors">
+                                        <X size={14} /> Remove Wallpaper
+                                    </button>
+                                )}
                                 <button onClick={handleClearChat} className="w-full flex items-center gap-3 px-4 py-3 text-left text-xs font-medium text-gray-300 hover:bg-white/5 hover:text-white transition-colors">
                                     <Eraser size={14} /> Clear Chat
                                 </button>
@@ -486,7 +603,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
         {/* Messages Area */}
         <div className="flex-1 overflow-y-auto pt-[calc(env(safe-area-inset-top)+7rem)] px-4 pb-28 space-y-3 z-10 native-scroll no-scrollbar min-h-0">
           <div className="flex justify-center mb-6">
-             <div className="bg-[#1A1A21] border border-white/5 px-4 py-2 rounded-full text-[10px] font-medium text-gray-500 flex items-center gap-2 shadow-lg">
+             <div className="bg-[#1A1A21] border border-white/5 px-4 py-2 rounded-full text-[10px] font-medium text-gray-500 flex items-center gap-2 shadow-lg backdrop-blur-sm">
                 <Lock size={12} className="text-emerald-500" /> End-to-end encrypted.
              </div>
           </div>
@@ -528,9 +645,30 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
 
             const decryptedText = simpleDecrypt(msg.text, ENCRYPTION_KEY);
             
+            if (msg.type === 'image') {
+                return (
+                    <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group mb-1`}>
+                        <div className={`max-w-[75%] p-1 rounded-2xl relative shadow-lg ${isMe ? 'bg-gradient-to-tr from-violet-600 to-fuchsia-600' : 'bg-[#1A1A23] border border-white/5'}`}>
+                            <div className="rounded-xl overflow-hidden cursor-pointer active:scale-95 transition-transform" onClick={() => setExpandedImage(decryptedText)}>
+                                <img src={decryptedText} className="w-full max-w-[200px] h-auto object-cover" alt="Chat attachment" />
+                            </div>
+                            <div className={`flex items-center justify-end gap-1 px-2 pb-1 mt-1 opacity-70`}>
+                                <p className={`text-[9px] font-bold ${isMe ? 'text-white' : 'text-gray-400'}`}>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                {isMe && (msg.read ? <CheckCheck size={12} className="text-blue-200" /> : <Check size={12} className="text-white/70" />)}
+                            </div>
+                            {isMe && (
+                                <button onClick={() => deleteMessage(msg.id)} className="absolute -left-10 top-1/2 -translate-y-1/2 p-2 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity bg-[#1A1A23] rounded-full border border-white/5">
+                                    <Trash2 size={14} />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                );
+            }
+
             return (
               <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group mb-1`}>
-                <div className={`max-w-[75%] px-5 py-3 text-sm relative transition-all shadow-lg ${isMe ? 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white rounded-[1.2rem] rounded-br-none' : 'bg-[#1A1A23] text-gray-100 border border-white/5 rounded-[1.2rem] rounded-bl-none'}`}>
+                <div className={`max-w-[75%] px-5 py-3 text-sm relative transition-all shadow-lg ${isMe ? 'bg-gradient-to-tr from-violet-600 to-fuchsia-600 text-white rounded-[1.2rem] rounded-br-none' : 'bg-[#1A1A23] text-gray-100 border border-white/5 rounded-[1.2rem] rounded-bl-none backdrop-blur-md'}`}>
                   <p className="leading-relaxed break-words font-medium">{decryptedText}</p>
                   <div className={`flex items-center justify-end gap-1 mt-1 opacity-70`}>
                       <p className={`text-[9px] font-bold ${isMe ? 'text-violet-100' : 'text-gray-500'}`}>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
@@ -568,6 +706,14 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
               </div>
           ) : (
               <form onSubmit={sendMessage} className="flex items-center gap-2 relative bg-[#121216]/90 backdrop-blur-xl border border-white/10 p-2 rounded-[1.5rem] shadow-2xl shadow-black/50">
+                <button 
+                    type="button" 
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="p-3 text-gray-400 hover:text-white hover:bg-white/5 rounded-full transition-colors"
+                >
+                    {isUploading ? <Loader2 size={20} className="animate-spin" /> : <ImageIcon size={20} />}
+                </button>
                 <input 
                   type="text" 
                   value={newMessage}
@@ -576,7 +722,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
                       handleTyping();
                   }}
                   placeholder="Type message..."
-                  className="flex-1 bg-transparent text-white placeholder-gray-500 px-4 py-3 outline-none text-sm font-medium"
+                  className="flex-1 bg-transparent text-white placeholder-gray-500 px-2 py-3 outline-none text-sm font-medium"
                 />
                 <button type="submit" disabled={!newMessage.trim()} className="p-3 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-full text-white disabled:opacity-50 hover:scale-105 transition-transform shadow-lg shadow-violet-500/20 active:scale-95">
                   <Send size={18} fill="currentColor" />
@@ -584,6 +730,14 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
               </form>
           )}
         </div>
+
+        {/* Lightbox for Images */}
+        {expandedImage && (
+            <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center animate-fade-in p-4" onClick={() => setExpandedImage(null)}>
+                <img src={expandedImage} className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
+                <button className="absolute top-8 right-8 text-white p-2 bg-white/10 rounded-full"><X size={24} /></button>
+            </div>
+        )}
       </div>
     );
   }
@@ -657,7 +811,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
                           </div>
                           <div className="flex justify-between items-center">
                               <p className={`text-sm truncate max-w-[180px] ${unread > 0 ? 'text-white font-bold' : 'text-gray-400'}`}>
-                                 {chat.typing?.[otherUser.uid] ? <span className="text-fuchsia-400 italic">typing...</span> : chat.lastMessage}
+                                 {chat.typing?.[otherUser.uid] ? <span className="text-fuchsia-400 italic">typing...</span> : (chat.lastMessage === 'Encrypted Message' ? 'Sent a message' : chat.lastMessage)}
                               </p>
                               {unread > 0 && (<div className="w-5 h-5 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-full flex items-center justify-center text-[10px] font-bold text-white shadow-lg">{unread}</div>)}
                           </div>
