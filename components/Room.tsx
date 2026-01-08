@@ -314,9 +314,6 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
     const candidateQueueRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
     const initialChargeProcessed = useRef(false);
 
-    // ... (All existing useEffects remain unchanged for brevity, only layout in JSX needs updates)
-    // To ensure I don't break logic, I will copy the useEffects exactly as they were in the previous file content provided.
-    
     useEffect(() => {
         participantsRef.current = participants;
         if (!isInitialLoadRef.current) {
@@ -513,6 +510,44 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
     }, [currentUser.uid]);
 
+    // Prune Stale Users (Host Only Logic)
+    useEffect(() => {
+        if (!roomData || currentUser.uid !== roomData.createdBy) return;
+
+        const pruneInterval = setInterval(async () => {
+            const now = Date.now();
+            const STALE_TIMEOUT = 90000; // 90 seconds (3 missed 30s heartbeats)
+            
+            // Use ref to avoid closure staleness issues with the interval
+            const currentParts = participantsRef.current;
+            
+            const staleUsers = currentParts.filter(p => {
+                // Don't remove self (Host)
+                if (p.uid === currentUser.uid) return false;
+                // Check if lastSeen is older than timeout
+                return (now - (p.lastSeen || 0)) > STALE_TIMEOUT;
+            });
+
+            if (staleUsers.length > 0) {
+                console.log("Pruning stale users:", staleUsers.map(u => u.displayName));
+                try {
+                    const roomRef = doc(db, 'rooms', roomId);
+                    // Filter out stale users to create new list
+                    const validParticipants = currentParts.filter(p => {
+                        if (p.uid === currentUser.uid) return true;
+                        return (now - (p.lastSeen || 0)) <= STALE_TIMEOUT;
+                    });
+                    
+                    await updateDoc(roomRef, { participants: validParticipants });
+                } catch (e) {
+                    console.error("Failed to prune users", e);
+                }
+            }
+        }, 10000); // Run check every 10 seconds
+
+        return () => clearInterval(pruneInterval);
+    }, [roomData?.createdBy, roomId]);
+
     useEffect(() => {
         musicAudioRef.current = new Audio();
         musicAudioRef.current.crossOrigin = "anonymous";
@@ -606,7 +641,17 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         init();
         heartbeatIntervalRef.current = setInterval(async () => { await updateParticipantData(currentUser.uid, { lastSeen: Date.now() }); }, 30000); 
         
-        return () => { cleanup(); };
+        // Window close cleanup listener
+        const handleBeforeUnload = async (e: BeforeUnloadEvent) => {
+            // Attempt cleanup (note: async/await is not guaranteed to finish on unload, but often works on desktop)
+            await cleanup();
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
+        return () => { 
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            cleanup(); 
+        };
     }, [roomId]);
     
     useEffect(() => {
