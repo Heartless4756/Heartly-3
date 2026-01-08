@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { UserProfile, Room, Report, Sticker, RoomBackground, GiftItem, Frame } from '../types';
+import { UserProfile, Room, Report, Sticker, RoomBackground, GiftItem, Frame, ActiveListener } from '../types';
 import { doc, updateDoc, increment, getDoc, arrayRemove, arrayUnion, collection, query, where, getDocs, deleteDoc, orderBy, addDoc, setDoc, limit } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { 
   LogOut, Edit2, ChevronRight, Shield, Loader2, Copy, CheckCircle2, Camera, Coins, Wallet, X, CreditCard, Users, 
   UserCheck, UserPlus, ShieldAlert, ShieldCheck, Search, Ban, HelpCircle, ChevronDown, ChevronUp, UserX, 
   Smile, Image as ImageIcon, Gift, ShoppingBag, Frame as FrameIcon, LayoutDashboard, Mic, Headphones, Flag, 
-  AlertTriangle, Megaphone, Plus, Trash2, Upload
+  AlertTriangle, Megaphone, Plus, Trash2, Upload, PowerOff, Zap
 } from 'lucide-react';
 
 interface ProfileProps {
@@ -123,6 +123,8 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   const [showAdminCreateRoom, setShowAdminCreateRoom] = useState(false);
   
   const [adminListeners, setAdminListeners] = useState<UserProfile[]>([]);
+  const [adminOnlineListeners, setAdminOnlineListeners] = useState<ActiveListener[]>([]); // New state for online listeners
+  
   const [adminReports, setAdminReports] = useState<Report[]>([]);
   const [adminStickers, setAdminStickers] = useState<Sticker[]>([]);
   const [adminGifts, setAdminGifts] = useState<GiftItem[]>([]);
@@ -324,6 +326,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       setAdminListeners(listenersSnap.docs.map(d => ({ ...d.data(), uid: d.id } as UserProfile)));
 
       const activeListenersSnap = await getDocs(collection(db, 'activeListeners'));
+      setAdminOnlineListeners(activeListenersSnap.docs.map(d => ({ ...d.data(), uid: d.id } as ActiveListener)));
 
       const usersQuery = query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(20));
       const usersSnap = await getDocs(usersQuery);
@@ -380,6 +383,19 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
 
   const handleUnequipFrame = async () => {
       try { await updateDoc(doc(db, 'users', user.uid), { frameUrl: null }); onUpdate(); setShowBagModal(false); } catch (e) { console.error(e); }
+  };
+
+  const handleForceOffline = async (uid: string) => {
+      if(window.confirm("Force this listener offline?")) {
+          try {
+              await deleteDoc(doc(db, 'activeListeners', uid));
+              alert("Listener forced offline.");
+              fetchAdminStats();
+          } catch(e) {
+              console.error(e);
+              alert("Failed to force offline.");
+          }
+      }
   };
 
   // --- Render Sections for Admin ---
@@ -458,7 +474,38 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
 
   const renderAdminListeners = () => (
       <div className="h-full flex flex-col animate-fade-in p-4 md:p-8">
-          <h2 className="text-xl font-bold text-white mb-6 flex-shrink-0">Authorized Listeners</h2>
+          {/* Currently Online Section */}
+          <div className="mb-8">
+              <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><Zap size={20} className="text-yellow-500" fill="currentColor"/> Currently Online ({adminOnlineListeners.length})</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {adminOnlineListeners.length === 0 ? (
+                      <p className="text-gray-500 text-sm italic col-span-2">No listeners currently online.</p>
+                  ) : (
+                      adminOnlineListeners.map(l => (
+                          <div key={l.uid} className="flex items-center justify-between bg-[#1A1A21] p-3 rounded-xl border border-green-500/30">
+                              <div className="flex items-center gap-3">
+                                  <div className="relative">
+                                      <img src={l.photoURL || ''} className="w-10 h-10 rounded-full bg-gray-800 object-cover" />
+                                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-[#1A1A21]"></div>
+                                  </div>
+                                  <div>
+                                      <p className="text-sm font-bold text-white">{l.displayName}</p>
+                                      <p className="text-[10px] text-green-400 font-bold uppercase tracking-wide">Online Now</p>
+                                  </div>
+                              </div>
+                              <button onClick={() => handleForceOffline(l.uid)} className="text-xs text-white bg-red-500 font-bold px-3 py-2 rounded-lg hover:bg-red-600 flex items-center gap-2 shadow-lg shadow-red-500/20">
+                                  <PowerOff size={14} /> Force Offline
+                              </button>
+                          </div>
+                      ))
+                  )}
+              </div>
+          </div>
+
+          <div className="w-full h-px bg-white/10 mb-8"></div>
+
+          {/* All Authorized Listeners Section */}
+          <h2 className="text-xl font-bold text-white mb-6 flex-shrink-0 flex items-center gap-2"><ShieldCheck size={20} className="text-emerald-500"/> Authorized Listeners</h2>
           <div className="flex-1 overflow-y-auto native-scroll">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{adminListeners.map(l => (<div key={l.uid} className="flex items-center justify-between bg-[#1A1A21] p-3 rounded-xl border border-white/5"><div className="flex items-center gap-3"><img src={l.photoURL || ''} className="w-10 h-10 rounded-full bg-gray-800 object-cover" /><div><p className="text-sm font-bold text-white">{l.displayName}</p><p className="text-[10px] text-gray-500">@{l.uniqueId}</p></div></div><button onClick={async () => { if(window.confirm('Revoke listener?')) await updateDoc(doc(db, 'users', l.uid), { isAuthorizedListener: false }); fetchAdminStats(); }} className="text-xs text-red-400 font-bold border border-red-500/20 px-3 py-1.5 rounded-lg hover:bg-red-500/10">Revoke</button></div>))}</div>
           </div>
