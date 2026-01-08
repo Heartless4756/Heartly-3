@@ -72,8 +72,10 @@ export const ActiveRoom: React.FC<ActiveRoomProps> = ({
       const unsub = onSnapshot(doc(db, 'rooms', roomId), (docSnap) => {
           if (docSnap.exists()) {
               const data = docSnap.data() as Room;
-              setRoomData(data);
-              setParticipants(data.participants);
+              // Ensure we have the ID from the document snapshot
+              const roomWithId = { ...data, id: docSnap.id };
+              setRoomData(roomWithId);
+              setParticipants(data.participants || []);
               
               if (data.kickedUsers && data.kickedUsers[currentUser.uid]) {
                   onLeave();
@@ -206,7 +208,7 @@ export const ActiveRoom: React.FC<ActiveRoomProps> = ({
              </button>
              <div className="text-center">
                  <h2 className="font-bold text-lg">{roomData.name}</h2>
-                 <p className="text-xs text-gray-400">ID: {roomData.id.slice(0,6)}</p>
+                 <p className="text-xs text-gray-400">ID: {roomData.id ? roomData.id.slice(0,6) : '...'}</p>
              </div>
              <button onClick={handleLeave} className="p-2 rounded-full bg-red-500/20 text-red-500 hover:bg-red-500 hover:text-white transition-colors">
                  <Power size={20} />
