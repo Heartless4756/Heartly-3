@@ -73,6 +73,12 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
             if (!incomingRequest) {
                 setIncomingRequest(req);
                 audioRef.current?.play().catch(() => {});
+                
+                // RESET INACTIVITY TIMER on incoming call
+                // Update lastActive timestamp to now
+                updateDoc(doc(db, 'activeListeners', currentUser.uid), {
+                    lastActive: Date.now()
+                }).catch(err => console.error("Failed to update activity", err));
             }
         } else {
             setIncomingRequest(null);
@@ -85,7 +91,7 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
         unsub();
         audioRef.current?.pause();
     };
-  }, [isOnline, currentUser.uid]);
+  }, [isOnline, currentUser.uid, incomingRequest]);
 
   // 4. Listen for Outgoing Call Updates
   useEffect(() => {
@@ -111,6 +117,35 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
 
       return () => unsub();
   }, [outgoingRequest?.id]);
+
+  // 5. Auto-Offline Logic (5 Minutes Inactivity)
+  useEffect(() => {
+      if (!isOnline) return;
+
+      const checkInactivity = async () => {
+          try {
+              const docRef = doc(db, 'activeListeners', currentUser.uid);
+              const snap = await getDoc(docRef);
+              
+              if (snap.exists()) {
+                  const data = snap.data() as ActiveListener;
+                  const lastActive = data.lastActive || 0;
+                  const FIVE_MINUTES = 5 * 60 * 1000; 
+                  
+                  if (Date.now() - lastActive > FIVE_MINUTES) {
+                      await deleteDoc(docRef); // This will trigger the isOnline listener to set state to false
+                      alert("You have been marked offline because you haven't received a call in 5 minutes.");
+                  }
+              }
+          } catch (e) {
+              console.error("Auto-offline check failed", e);
+          }
+      };
+
+      // Check every 1 minute
+      const interval = setInterval(checkInactivity, 60 * 1000);
+      return () => clearInterval(interval);
+  }, [isOnline, currentUser.uid]);
 
   const toggleOnline = async () => {
       if (!currentUser.isAuthorizedListener) {

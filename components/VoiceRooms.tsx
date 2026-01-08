@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, orderBy, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import { Room, UserProfile } from '../types';
-import { Search, Users, Gamepad2, Music, Coffee, ArrowLeft, ArrowRight, Zap, Lock, KeyRound, Radio, Power, Coins, Mic, Sparkles, Hash } from 'lucide-react';
+import { Search, Users, Gamepad2, Music, Coffee, ArrowLeft, ArrowRight, Zap, Lock, KeyRound, Radio, Power, Coins, Mic, Sparkles, Hash, UserCheck, Globe } from 'lucide-react';
 
 interface VoiceRoomsProps {
   currentUser: UserProfile;
@@ -16,6 +16,9 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
   
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // View Mode: 'all' or 'following'
+  const [viewMode, setViewMode] = useState<'all' | 'following'>('all');
 
   // Password Prompt State
   const [passwordPromptRoom, setPasswordPromptRoom] = useState<Room | null>(null);
@@ -92,19 +95,40 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
     }
   };
 
-  // Only show Active rooms to public
-  const publicRooms = rooms.filter(room => {
+  // 1. Base Filter (Active & Public)
+  const baseRooms = rooms.filter(room => {
     if (!room.active) return false; // Hide offline rooms
     if (room.isPaidCall) return false; // Hide 1-on-1 private calls
-    
+    return true;
+  });
+
+  // 2. Apply Search or Tab Filters
+  const displayedRooms = baseRooms.filter(room => {
     const q = searchQuery.toLowerCase();
     const nameMatch = room.name.toLowerCase().includes(q);
     const topicMatch = room.topic?.toLowerCase().includes(q);
-    return nameMatch || topicMatch;
+    
+    // Search takes priority
+    if (isSearchOpen) return nameMatch || topicMatch;
+
+    // Tab Logic
+    if (viewMode === 'following') {
+        // Check if any participant is in the user's following list
+        const followingIds = currentUser.following || [];
+        return room.participants.some(p => followingIds.includes(p.uid));
+    }
+
+    return true; // 'all' view
   });
 
   // Find the room owned by the current user (excluding paid calls)
   const myRoom = rooms.find(r => r.createdBy === currentUser.uid && !r.isPaidCall);
+
+  // Helper to find which friend is in the room
+  const getFollowedUserInRoom = (room: Room) => {
+      const followingIds = currentUser.following || [];
+      return room.participants.find(p => followingIds.includes(p.uid));
+  };
 
   return (
     <div className="flex flex-col h-full bg-transparent text-white relative">
@@ -113,9 +137,9 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
       <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-fuchsia-600/10 rounded-full blur-[100px] pointer-events-none z-0" />
 
       {/* Header - Updated Padding for Notch */}
-      <div className="px-6 pb-8 pt-[calc(env(safe-area-inset-top)+2rem)] relative z-10 flex flex-col justify-center flex-shrink-0">
+      <div className="px-6 pb-2 pt-[calc(env(safe-area-inset-top)+2rem)] relative z-10 flex flex-col justify-center flex-shrink-0">
         {isSearchOpen ? (
-          <div className="flex items-center gap-3 animate-fade-in">
+          <div className="flex items-center gap-3 animate-fade-in mb-4">
             <button 
               onClick={() => { setIsSearchOpen(false); setSearchQuery(''); }}
               className="p-3 bg-white/5 rounded-full text-gray-400 hover:text-white transition-colors"
@@ -135,14 +159,14 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
             </div>
           </div>
         ) : (
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-4">
             <div className="space-y-1">
               <h1 className="text-3xl font-extrabold text-white tracking-tight leading-none">
                 Heartly
               </h1>
               <div className="flex items-center gap-2">
                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                 <p className="text-xs font-medium text-gray-400">{publicRooms.length} active now</p>
+                 <p className="text-xs font-medium text-gray-400">{baseRooms.length} active now</p>
               </div>
             </div>
             
@@ -166,81 +190,114 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
             </div>
           </div>
         )}
+
+        {/* View Switcher (Tabs) */}
+        {!isSearchOpen && (
+            <div className="flex bg-[#1A1A21] p-1 rounded-2xl border border-white/5 mb-2 relative z-20">
+                <button 
+                    onClick={() => setViewMode('all')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all ${viewMode === 'all' ? 'bg-white/10 text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}
+                >
+                    <Globe size={14} /> All Rooms
+                </button>
+                <button 
+                    onClick={() => setViewMode('following')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all ${viewMode === 'following' ? 'bg-gradient-to-r from-violet-600/80 to-fuchsia-600/80 text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}
+                >
+                    <UserCheck size={14} /> Following
+                </button>
+            </div>
+        )}
       </div>
 
-      {/* Room List with Scroll Fix - Added min-h-0 */}
-      <div className="flex-1 px-6 space-y-4 native-scroll relative z-10 pb-32 no-scrollbar min-h-0">
+      {/* Room List with Scroll Fix - Added min-h-0 and pb-safe support */}
+      <div className="flex-1 px-6 space-y-4 native-scroll relative z-10 pb-[calc(6rem+env(safe-area-inset-bottom))] no-scrollbar min-h-0">
         {loading ? (
            <div className="flex justify-center py-20"><div className="w-10 h-10 border-2 border-violet-500/30 border-t-violet-500 rounded-full animate-spin"/></div>
-        ) : publicRooms.length === 0 ? (
-           <div className="text-center py-24 opacity-60">
+        ) : displayedRooms.length === 0 ? (
+           <div className="text-center py-24 opacity-60 animate-fade-in">
              <div className="w-24 h-24 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-6 border border-white/5">
-               <Sparkles size={32} className="text-gray-500" />
+               {viewMode === 'following' ? <UserCheck size={32} className="text-gray-500" /> : <Sparkles size={32} className="text-gray-500" />}
              </div>
-             <p className="text-gray-300 font-bold text-lg">No vibes yet.</p>
-             <p className="text-gray-500 text-xs mt-1">Check back later or start your own.</p>
+             <p className="text-gray-300 font-bold text-lg">{viewMode === 'following' ? 'No friends active.' : 'No vibes yet.'}</p>
+             <p className="text-gray-500 text-xs mt-1">{viewMode === 'following' ? 'Users you follow are not in any room right now.' : 'Check back later or start your own.'}</p>
            </div>
         ) : (
-          publicRooms.map(room => (
-            <div 
-              key={room.id}
-              onClick={() => handleRoomClick(room)}
-              className="group relative bg-[#121216]/60 backdrop-blur-xl rounded-[2rem] border border-white/5 overflow-hidden transition-all hover:border-violet-500/30 active:scale-[0.98] shadow-lg cursor-pointer touch-manipulation transform translate-z-0"
-            >
-              {/* Top Accent Gradient */}
-              <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-white/5 to-transparent opacity-50 group-hover:opacity-100 transition-opacity pointer-events-none" />
-              
-              <div className="p-5 relative z-10">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    {/* Topic Badge */}
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/5 text-[10px] font-bold text-violet-300 uppercase tracking-wider mb-2 backdrop-blur-md">
-                        {getTopicIcon(room.topic || '')}
-                        {room.topic || 'General'}
-                    </div>
-                    <h3 className="text-xl font-bold text-white leading-tight flex items-center gap-2 group-hover:text-violet-200 transition-colors">
-                        {room.name}
-                        {room.password && <Lock size={14} className="text-yellow-500" />}
-                    </h3>
-                  </div>
+          displayedRooms.map(room => {
+            const followedUser = getFollowedUserInRoom(room);
+            
+            return (
+                <div 
+                  key={room.id}
+                  onClick={() => handleRoomClick(room)}
+                  className="group relative bg-[#121216]/60 backdrop-blur-xl rounded-[2rem] border border-white/5 overflow-hidden transition-all hover:border-violet-500/30 active:scale-[0.98] shadow-lg cursor-pointer touch-manipulation transform translate-z-0"
+                >
+                  {/* Top Accent Gradient */}
+                  <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-white/5 to-transparent opacity-50 group-hover:opacity-100 transition-opacity pointer-events-none" />
                   
-                  {/* Audio Visualizer (Fake) */}
-                  <div className="flex items-end gap-0.5 h-4">
-                      <div className="w-1 bg-violet-500 rounded-full animate-[bounce_1s_infinite] h-2"></div>
-                      <div className="w-1 bg-fuchsia-500 rounded-full animate-[bounce_1.2s_infinite] h-4"></div>
-                      <div className="w-1 bg-cyan-500 rounded-full animate-[bounce_0.8s_infinite] h-3"></div>
+                  <div className="p-5 relative z-10">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="flex-1 mr-2">
+                        <div className="flex flex-wrap gap-2 mb-2">
+                            {/* Topic Badge */}
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 border border-white/5 text-[10px] font-bold text-violet-300 uppercase tracking-wider backdrop-blur-md">
+                                {getTopicIcon(room.topic || '')}
+                                {room.topic || 'General'}
+                            </div>
+                            
+                            {/* Friend Active Badge - Only show if relevant */}
+                            {followedUser && (
+                                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-500/20 border border-green-500/30 text-[10px] font-bold text-green-300 backdrop-blur-md animate-pulse">
+                                    <UserCheck size={10} />
+                                    {followedUser.displayName} is here
+                                </div>
+                            )}
+                        </div>
+
+                        <h3 className="text-xl font-bold text-white leading-tight flex items-center gap-2 group-hover:text-violet-200 transition-colors">
+                            {room.name}
+                            {room.password && <Lock size={14} className="text-yellow-500" />}
+                        </h3>
+                      </div>
+                      
+                      {/* Audio Visualizer (Fake) */}
+                      <div className="flex items-end gap-0.5 h-4">
+                          <div className="w-1 bg-violet-500 rounded-full animate-[bounce_1s_infinite] h-2"></div>
+                          <div className="w-1 bg-fuchsia-500 rounded-full animate-[bounce_1.2s_infinite] h-4"></div>
+                          <div className="w-1 bg-cyan-500 rounded-full animate-[bounce_0.8s_infinite] h-3"></div>
+                      </div>
+                    </div>
+
+                    {/* Footer Info */}
+                    <div className="flex items-center justify-between mt-6">
+                       <div className="flex -space-x-3 items-center">
+                          {room.participants.filter(p => p.seatIndex >= 0 || p.seatIndex === 999).slice(0, 4).map((p, i) => (
+                             <div key={i} className="relative w-10 h-10">
+                                 <img 
+                                   src={p.photoURL || `https://ui-avatars.com/api/?name=${p.displayName}`} 
+                                   alt={p.displayName} 
+                                   className={`w-full h-full rounded-full border-2 bg-gray-800 object-cover shadow-md ${followedUser?.uid === p.uid ? 'border-green-500' : 'border-[#121216]'}`}
+                                 />
+                                 {/* Frame Overlay in List - Perfect Fit Update */}
+                                 {p.frameUrl && <img src={p.frameUrl} className="absolute inset-0 w-full h-full scale-[1.3] object-contain pointer-events-none z-20" />}
+                             </div>
+                          ))}
+                          {room.participants.length > 4 && (
+                            <div className="w-10 h-10 rounded-full border-2 border-[#121216] bg-[#1A1A21] text-[10px] flex items-center justify-center font-bold text-white shadow-md">
+                              +{room.participants.length - 4}
+                            </div>
+                          )}
+                       </div>
+
+                       <div className="flex items-center gap-1 text-gray-400 group-hover:text-white transition-colors">
+                          <span className="text-xs font-bold mr-1">{room.participants.length}</span>
+                          <Users size={14} />
+                       </div>
+                    </div>
                   </div>
                 </div>
-
-                {/* Footer Info */}
-                <div className="flex items-center justify-between mt-6">
-                   <div className="flex -space-x-3 items-center">
-                      {room.participants.filter(p => p.seatIndex >= 0 || p.seatIndex === 999).slice(0, 4).map((p, i) => (
-                         <div key={i} className="relative w-10 h-10">
-                             <img 
-                               src={p.photoURL || `https://ui-avatars.com/api/?name=${p.displayName}`} 
-                               alt={p.displayName} 
-                               className="w-full h-full rounded-full border-2 border-[#121216] bg-gray-800 object-cover shadow-md"
-                             />
-                             {/* Frame Overlay in List - Perfect Fit Update */}
-                             {p.frameUrl && <img src={p.frameUrl} className="absolute inset-0 w-full h-full scale-[1.3] object-contain pointer-events-none z-20" />}
-                         </div>
-                      ))}
-                      {room.participants.length > 4 && (
-                        <div className="w-10 h-10 rounded-full border-2 border-[#121216] bg-[#1A1A21] text-[10px] flex items-center justify-center font-bold text-white shadow-md">
-                          +{room.participants.length - 4}
-                        </div>
-                      )}
-                   </div>
-
-                   <div className="flex items-center gap-1 text-gray-400 group-hover:text-white transition-colors">
-                      <span className="text-xs font-bold mr-1">{room.participants.length}</span>
-                      <Users size={14} />
-                   </div>
-                </div>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
