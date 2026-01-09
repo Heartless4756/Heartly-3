@@ -7,7 +7,7 @@ import {
   LogOut, Edit2, ChevronRight, Shield, Loader2, Copy, CheckCircle2, Camera, Coins, Wallet, X, CreditCard, Users, 
   UserCheck, UserPlus, ShieldAlert, ShieldCheck, Search, Ban, HelpCircle, ChevronDown, ChevronUp, UserX, 
   Smile, Image as ImageIcon, Gift, ShoppingBag, Frame as FrameIcon, LayoutDashboard, Mic, Headphones, Flag, 
-  AlertTriangle, Megaphone, Plus, Trash2, Upload, PowerOff, Zap, ArrowLeft
+  AlertTriangle, Megaphone, Plus, Trash2, Upload, PowerOff, Zap, ArrowLeft, Unlock
 } from 'lucide-react';
 
 interface ProfileProps {
@@ -147,6 +147,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
 
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [allowUserRoomCreation, setAllowUserRoomCreation] = useState(false); // Global room creation setting
   
   const [stats, setStats] = useState({ totalUsers: 0, activeRooms: 0, onlineListeners: 0, totalCoins: 0, pendingReports: 0 });
 
@@ -354,7 +355,11 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       setAdminFrames(framesSnap.docs.map(d => ({ ...d.data(), id: d.id } as Frame)));
 
       const sysDoc = await getDoc(doc(db, 'system', 'general'));
-      if (sysDoc.exists()) setMaintenanceMode(sysDoc.data().maintenanceMode || false);
+      if (sysDoc.exists()) {
+          const data = sysDoc.data();
+          setMaintenanceMode(data.maintenanceMode || false);
+          setAllowUserRoomCreation(data.allowUserRoomCreation || false);
+      }
 
       setStats({
         totalUsers: 100 + usersSnap.size, // Basic offset for demo
@@ -399,6 +404,33 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
       }
   };
 
+  const handleAssignRoom = async () => {
+      if (!fetchedAdminUser) return;
+      const roomName = prompt(`Enter Room Name for ${fetchedAdminUser.displayName}:`);
+      if (!roomName) return;
+
+      setLoading(true);
+      try {
+          await addDoc(collection(db, 'rooms'), {
+              name: roomName,
+              createdBy: fetchedAdminUser.uid,
+              creatorName: fetchedAdminUser.displayName,
+              createdAt: Date.now(),
+              participants: [],
+              lockedSeats: [],
+              active: true,
+              admins: [fetchedAdminUser.uid] // User becomes admin of their own room
+          });
+          alert(`Room "${roomName}" assigned to ${fetchedAdminUser.displayName}`);
+          fetchAdminStats();
+      } catch (e) {
+          console.error(e);
+          alert("Failed to assign room");
+      } finally {
+          setLoading(false);
+      }
+  };
+
   // --- Render Sections for Admin ---
   const renderAdminDashboard = () => (
       <div className="h-full overflow-y-auto native-scroll p-4 md:p-8 space-y-6">
@@ -412,6 +444,16 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                   <div><h3 className="text-white font-bold flex items-center gap-2"><AlertTriangle size={18} className="text-orange-500"/> Maintenance Mode</h3><p className="text-xs text-gray-500">Disable app access for non-admins</p></div>
                   <button onClick={async () => { const val = !maintenanceMode; await setDoc(doc(db, 'system', 'general'), { maintenanceMode: val }, { merge: true }); setMaintenanceMode(val); }} className={`w-12 h-6 rounded-full p-1 transition-colors ${maintenanceMode ? 'bg-orange-500' : 'bg-gray-700'}`}><div className={`w-4 h-4 bg-white rounded-full transition-transform ${maintenanceMode ? 'translate-x-6' : ''}`} /></button>
               </div>
+
+              {/* Voice Room For All Toggle */}
+              <div className="col-span-2 bg-[#1A1A21] p-5 rounded-2xl border border-white/5 flex items-center justify-between">
+                  <div>
+                      <h3 className="text-white font-bold flex items-center gap-2"><Unlock size={18} className="text-emerald-500"/> Voice Room for All</h3>
+                      <p className="text-xs text-gray-500">Allow all users to create rooms</p>
+                  </div>
+                  <button onClick={async () => { const val = !allowUserRoomCreation; await setDoc(doc(db, 'system', 'general'), { allowUserRoomCreation: val }, { merge: true }); setAllowUserRoomCreation(val); }} className={`w-12 h-6 rounded-full p-1 transition-colors ${allowUserRoomCreation ? 'bg-emerald-500' : 'bg-gray-700'}`}><div className={`w-4 h-4 bg-white rounded-full transition-transform ${allowUserRoomCreation ? 'translate-x-6' : ''}`} /></button>
+              </div>
+
               <div className="col-span-2 bg-[#1A1A21] p-5 rounded-2xl border border-white/5">
                    <h3 className="text-white font-bold mb-2 flex items-center gap-2"><Megaphone size={16}/> System Broadcast</h3>
                    <div className="flex gap-2"><input type="text" value={broadcastMessage} onChange={(e) => setBroadcastMessage(e.target.value)} placeholder="Message..." className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs text-white" /><button onClick={() => { alert(`Sent: ${broadcastMessage}`); setBroadcastMessage(''); }} className="px-4 bg-violet-600 rounded-xl text-xs font-bold">Send</button></div>
@@ -471,7 +513,10 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
                        </div>
                        <div className="space-y-6">
                            <div><h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Wallet: {fetchedAdminUser.walletBalance}</h4><div className="flex gap-2"><input type="number" value={adminCoinAmount} onChange={(e) => setAdminCoinAmount(e.target.value)} placeholder="Amount" className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white" /><button onClick={async () => { const amt = parseInt(adminCoinAmount); if(isNaN(amt)) return; await updateDoc(doc(db, 'users', fetchedAdminUser.uid), { walletBalance: increment(amt) }); setFetchedAdminUser(prev => prev ? {...prev, walletBalance: (prev.walletBalance||0)+amt} : null); setAdminCoinAmount(''); alert("Added"); }} className="bg-yellow-500 text-black px-6 rounded-xl font-bold">Add</button></div></div>
-                           <button onClick={() => setShowAssignFrameModal(true)} className="w-full py-3 bg-fuchsia-600/10 text-fuchsia-400 border border-fuchsia-600/20 rounded-xl font-bold hover:bg-fuchsia-600/20 flex items-center justify-center gap-2"><FrameIcon size={16} /> Give Frame</button>
+                           <div className="grid grid-cols-2 gap-3">
+                               <button onClick={() => setShowAssignFrameModal(true)} className="w-full py-3 bg-fuchsia-600/10 text-fuchsia-400 border border-fuchsia-600/20 rounded-xl font-bold hover:bg-fuchsia-600/20 flex items-center justify-center gap-2"><FrameIcon size={16} /> Give Frame</button>
+                               <button onClick={handleAssignRoom} className="w-full py-3 bg-indigo-600/10 text-indigo-400 border border-indigo-600/20 rounded-xl font-bold hover:bg-indigo-600/20 flex items-center justify-center gap-2"><Mic size={16} /> Assign Room</button>
+                           </div>
                            <button onClick={async () => { if(window.confirm(`Toggle Listener for ${fetchedAdminUser.displayName}?`)) { const newVal = !fetchedAdminUser.isAuthorizedListener; await updateDoc(doc(db, 'users', fetchedAdminUser.uid), { isAuthorizedListener: newVal }); setFetchedAdminUser(prev => prev ? {...prev, isAuthorizedListener: newVal} : null); } }} className={`w-full py-3 rounded-xl font-bold border ${fetchedAdminUser.isAuthorizedListener ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>{fetchedAdminUser.isAuthorizedListener ? 'Revoke Listener' : 'Make Listener'}</button>
                        </div>
                    </div>
