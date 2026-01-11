@@ -35,6 +35,9 @@ const App: React.FC = () => {
       return !localStorage.getItem(CACHE_KEY_AUTH);
   });
   
+  // Track if Firebase Auth SDK has actually initialized/restored session
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  
   // -- STATE PERSISTENCE & INITIALIZATION --
   // Changed initialization to always start at 'rooms' per request
   const [currentView, setCurrentView] = useState<ViewState>('rooms');
@@ -119,8 +122,6 @@ const App: React.FC = () => {
     audioRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2346/2346-preview.mp3");
     
     // Always enforce 'rooms' view on mount if no active room state overrides strictly
-    // But local state initialization already handles the view.
-    // We update history to reflect the Forced 'rooms' view.
     if (activeRoomId) {
         window.history.replaceState({ view: 'rooms' }, ''); // Base state is rooms
         window.history.pushState({ view: 'rooms', roomId: activeRoomId }, '');
@@ -132,7 +133,7 @@ const App: React.FC = () => {
   // -- FCM NOTIFICATION SETUP --
   useEffect(() => {
     const setupNotifications = async () => {
-        if (!user?.uid) return;
+        if (!user?.uid || !isAuthReady) return;
         
         try {
             const msg = await messaging();
@@ -149,7 +150,7 @@ const App: React.FC = () => {
                     if (token) {
                         // 3. Save Token to Firestore for targeted notifications
                         const userRef = doc(db, 'users', user.uid);
-                        await updateDoc(userRef, { fcmToken: token });
+                        await updateDoc(userRef, { fcmToken: token }).catch(() => {});
                     }
 
                     // 4. Handle Foreground Messages (App Open)
@@ -176,12 +177,15 @@ const App: React.FC = () => {
     if (user?.uid) {
         setupNotifications();
     }
-  }, [user?.uid]);
+  }, [user?.uid, isAuthReady]);
 
 
   // 1. Auth Listener (Network)
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      // Auth is ready (logged in or out)
+      setIsAuthReady(true);
+      
       if (currentUser) {
         setUser(currentUser);
         const serializableUser = {
@@ -206,7 +210,9 @@ const App: React.FC = () => {
 
   // 2. Real-time User Profile Listener
   useEffect(() => {
-    if (!user?.uid) return;
+    // CRITICAL FIX: Only attempt to listen to Firestore if Auth SDK is ready and user exists.
+    // This prevents "Missing or insufficient permissions" caused by using cached user before SDK init.
+    if (!user?.uid || !isAuthReady) return;
 
     const userDocRef = doc(db, 'users', user.uid);
     const unsubscribeSnapshot = onSnapshot(userDocRef, async (docSnap) => {
@@ -257,22 +263,29 @@ const App: React.FC = () => {
                 isAnonymous: user.isAnonymous
             };
             
-            setDoc(userDocRef, newUserProfile);
-            setDbUser(newUserProfile);
-            localStorage.setItem(CACHE_KEY_PROFILE, JSON.stringify(newUserProfile));
-            setLoading(false);
+            // Only try to create if we are sure auth is ready to avoid permission errors
+            if (isAuthReady) {
+                setDoc(userDocRef, newUserProfile).catch(e => console.error("Auto-create profile failed", e));
+                setDbUser(newUserProfile);
+                localStorage.setItem(CACHE_KEY_PROFILE, JSON.stringify(newUserProfile));
+                setLoading(false);
+            }
         }
     }, (error) => {
-        console.error("User snapshot error:", error);
+        // Suppress permission denied errors in console if they happen during transition
+        if (error.code !== 'permission-denied') {
+            console.error("User snapshot error:", error);
+        }
         if (loading) setLoading(false);
     });
 
     return () => unsubscribeSnapshot();
-  }, [user?.uid]);
+  }, [user?.uid, isAuthReady]);
 
   // Global Listener for Unread Messages
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid || !isAuthReady) return;
+    
     const q = query(
       collection(db, 'chats'), 
       where('participants', 'array-contains', user.uid)
@@ -308,9 +321,14 @@ const App: React.FC = () => {
             }
          }
       }
+    }, (error) => {
+        // Silently handle permission errors for unread counts
+        if (error.code !== 'permission-denied') {
+            console.error("Unread count error", error);
+        }
     });
     return () => unsubscribe();
-  }, [user?.uid, currentView, activeRoomId, isRoomMinimized]);
+  }, [user?.uid, currentView, activeRoomId, isRoomMinimized, isAuthReady]);
 
   // --- Back Button Handling Logic ---
   useEffect(() => {
@@ -455,13 +473,13 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (currentView) {
       case 'rooms':
-        return <VoiceRooms currentUser={userProfile} onJoinRoom={handleJoinRoom} />;
+        return <VoiceRooms currentUser={userProfile} onJoinRoom={handleJoinRoom} isAuthReady={isAuthReady} />;
       case 'listeners':
-        return <CallListeners currentUser={userProfile} onJoinRoom={handleJoinRoom} />;
+        return <CallListeners currentUser={userProfile} onJoinRoom={handleJoinRoom} isAuthReady={isAuthReady} />;
       case 'chats':
-        return <Chat currentUser={userProfile} onJoinRoom={handleJoinRoom} />;
+        return <Chat currentUser={userProfile} onJoinRoom={handleJoinRoom} isAuthReady={isAuthReady} />;
       case 'me':
-        return <Profile user={userProfile} onLogout={handleLogout} onUpdate={handleProfileUpdate} onJoinRoom={handleJoinRoom} />;
+        return <Profile user={userProfile} onLogout={handleLogout} onUpdate={handleProfileUpdate} onJoinRoom={handleJoinRoom} isAuthReady={isAuthReady} />;
       default:
         return null;
     }
@@ -481,13 +499,21 @@ const App: React.FC = () => {
         <>
             {/* Main Room View (Hidden when minimized) */}
             <div className={`absolute inset-0 z-50 transition-all duration-300 flex flex-col ${isRoomMinimized ? 'opacity-0 pointer-events-none' : 'opacity-100 bg-[#181818]'}`}>
-              <ActiveRoom 
-                roomId={activeRoomId} 
-                currentUser={userProfile} 
-                onLeave={handleLeaveRoom}
-                isMinimized={isRoomMinimized}
-                onMinimize={() => setIsRoomMinimized(!isRoomMinimized)}
-              />
+              {/* Only render active room internals if auth is actually ready to avoid snapshot errors on refresh */}
+              {isAuthReady ? (
+                  <ActiveRoom 
+                    roomId={activeRoomId} 
+                    currentUser={userProfile} 
+                    onLeave={handleLeaveRoom}
+                    isMinimized={isRoomMinimized}
+                    onMinimize={() => setIsRoomMinimized(!isRoomMinimized)}
+                    isAuthReady={isAuthReady}
+                  />
+              ) : (
+                  <div className="flex items-center justify-center h-full">
+                      <div className="w-10 h-10 border-2 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+              )}
             </div>
 
             {/* Floating Minimized Disc */}

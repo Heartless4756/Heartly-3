@@ -15,6 +15,7 @@ interface ProfileProps {
   onLogout: () => void;
   onUpdate: () => void;
   onJoinRoom: (roomId: string) => void;
+  isAuthReady: boolean;
 }
 
 const ADMIN_EMAIL = "sv116774@gmail.com";
@@ -78,7 +79,7 @@ const loadRazorpay = () => {
     });
 };
 
-export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJoinRoom }) => {
+export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJoinRoom, isAuthReady }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(user.displayName || '');
   const [editedBio, setEditedBio] = useState(user.bio || '');
@@ -316,6 +317,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
 
   // --- Admin Functions ---
   const fetchAdminStats = async () => {
+    if (!isAuthReady) return; // Guard
     setLoading(true);
     try {
       const roomsQuery = query(collection(db, 'rooms'), orderBy('createdAt', 'desc'));
@@ -371,7 +373,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
     } catch (e) { console.error("Admin fetch error", e); } finally { setLoading(false); }
   };
 
-  useEffect(() => { if (showAdminPanel && isAdmin) fetchAdminStats(); }, [showAdminPanel, adminTab]);
+  useEffect(() => { if (showAdminPanel && isAdmin && isAuthReady) fetchAdminStats(); }, [showAdminPanel, adminTab, isAuthReady]);
 
   const handleStickerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0]; if (!file) return; setLoading(true);

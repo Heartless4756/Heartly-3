@@ -13,9 +13,10 @@ import {
 interface CallListenersProps {
   currentUser: UserProfile;
   onJoinRoom: (roomId: string) => void;
+  isAuthReady: boolean;
 }
 
-export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoinRoom }) => {
+export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoinRoom, isAuthReady }) => {
   const [isOnline, setIsOnline] = useState(false);
   const [activeListeners, setActiveListeners] = useState<ActiveListener[]>([]);
   
@@ -37,15 +38,17 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
 
   // 1. Monitor My Online Status
   useEffect(() => {
+    if (!isAuthReady) return;
     const listenerRef = doc(db, 'activeListeners', currentUser.uid);
     const unsub = onSnapshot(listenerRef, (snap) => {
         setIsOnline(snap.exists());
     });
     return () => unsub();
-  }, [currentUser.uid]);
+  }, [currentUser.uid, isAuthReady]);
 
   // 2. Fetch All Active Listeners (excluding self)
   useEffect(() => {
+    if (!isAuthReady) return;
     const q = query(collection(db, 'activeListeners'));
     const unsub = onSnapshot(q, (snapshot) => {
         const list = snapshot.docs
@@ -54,11 +57,11 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
         setActiveListeners(list);
     });
     return () => unsub();
-  }, [currentUser.uid]);
+  }, [currentUser.uid, isAuthReady]);
 
   // 3. Listen for Incoming Calls (If Online)
   useEffect(() => {
-    if (!isOnline) return;
+    if (!isOnline || !isAuthReady) return;
 
     const q = query(
         collection(db, 'callRequests'),
@@ -91,11 +94,11 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
         unsub();
         audioRef.current?.pause();
     };
-  }, [isOnline, currentUser.uid, incomingRequest]);
+  }, [isOnline, currentUser.uid, incomingRequest, isAuthReady]);
 
   // 4. Listen for Outgoing Call Updates
   useEffect(() => {
-      if (!outgoingRequest) return;
+      if (!outgoingRequest || !isAuthReady) return;
 
       const unsub = onSnapshot(doc(db, 'callRequests', outgoingRequest.id), (snap) => {
           if (!snap.exists()) {
@@ -116,11 +119,11 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
       });
 
       return () => unsub();
-  }, [outgoingRequest?.id]);
+  }, [outgoingRequest?.id, isAuthReady]);
 
   // 5. Auto-Offline Logic (5 Minutes Inactivity)
   useEffect(() => {
-      if (!isOnline) return;
+      if (!isOnline || !isAuthReady) return;
 
       const checkInactivity = async () => {
           try {
@@ -145,7 +148,7 @@ export const CallListeners: React.FC<CallListenersProps> = ({ currentUser, onJoi
       // Check every 1 minute
       const interval = setInterval(checkInactivity, 60 * 1000);
       return () => clearInterval(interval);
-  }, [isOnline, currentUser.uid]);
+  }, [isOnline, currentUser.uid, isAuthReady]);
 
   const toggleOnline = async () => {
       if (!currentUser.isAuthorizedListener) {

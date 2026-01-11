@@ -16,6 +16,7 @@ import {
 interface ChatProps {
   currentUser: UserProfile;
   onJoinRoom: (roomId: string) => void;
+  isAuthReady: boolean;
 }
 
 // Type compatible with both UserProfile and ChatMetadata participant details
@@ -37,7 +38,7 @@ const simpleDecrypt = (text: string, key: string) => {
 
 const ENCRYPTION_KEY = "heartly_secret_key"; 
 
-export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
+export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom, isAuthReady }) => {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [activeChatUser, setActiveChatUser] = useState<ChatUser | null>(null);
   
@@ -80,6 +81,8 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
 
   // Load existing chats
   useEffect(() => {
+    if (!isAuthReady) return;
+
     const q = query(
       collection(db, 'chats'), 
       where('participants', 'array-contains', currentUser.uid)
@@ -95,14 +98,17 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
       
       setChats(chatList);
       setLoadingChats(false);
+    }, (error) => {
+        if(error.code !== 'permission-denied') console.error("Chat list error", error);
+        setLoadingChats(false);
     });
 
     return () => unsubscribe();
-  }, [currentUser.uid]);
+  }, [currentUser.uid, isAuthReady]);
 
   // Load messages & Typing Status for active chat
   useEffect(() => {
-    if (!activeChatId) return;
+    if (!activeChatId || !isAuthReady) return;
 
     // Reset Unread Count for ME when entering chat
     const resetUnread = async () => {
@@ -174,7 +180,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom }) => {
         unsubscribeChat();
         if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
-  }, [activeChatId, activeChatUser, currentUser.uid]);
+  }, [activeChatId, activeChatUser, currentUser.uid, isAuthReady]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();

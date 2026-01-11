@@ -8,9 +8,10 @@ import { Search, Users, Gamepad2, Music, Coffee, ArrowLeft, ArrowRight, Zap, Loc
 interface VoiceRoomsProps {
   currentUser: UserProfile;
   onJoinRoom: (roomId: string) => void;
+  isAuthReady: boolean;
 }
 
-export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom }) => {
+export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom, isAuthReady }) => {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -25,6 +26,13 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
   const [passwordInput, setPasswordInput] = useState('');
 
   useEffect(() => {
+    // Only subscribe to rooms if authentication is ready to avoid permission denied errors
+    if (!isAuthReady) {
+        // If we have cached rooms in memory from previous state, we keep them, 
+        // otherwise show loading. Since this component mounts fresh, it starts empty.
+        return;
+    }
+
     const q = query(collection(db, 'rooms'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetchedRooms: Room[] = snapshot.docs.map(doc => ({
@@ -33,10 +41,15 @@ export const VoiceRooms: React.FC<VoiceRoomsProps> = ({ currentUser, onJoinRoom 
       } as Room));
       setRooms(fetchedRooms);
       setLoading(false);
+    }, (error) => {
+        if(error.code !== 'permission-denied') {
+            console.error("Rooms listener error:", error);
+        }
+        setLoading(false);
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isAuthReady]);
 
   const handleRoomClick = async (room: Room) => {
       // Check for Ban (Kick)

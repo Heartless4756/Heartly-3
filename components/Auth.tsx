@@ -49,8 +49,12 @@ export const Auth: React.FC = () => {
               });
           }
       } catch (e: any) {
-          console.error("DB Error:", e);
-          setError("Failed to create profile: " + e.message);
+          console.error("DB Error in Auth:", e);
+          if (e.code === 'permission-denied') {
+              setError("Permission denied. Database write failed. Ensure you are signed in correctly.");
+          } else {
+              setError("Failed to create profile: " + e.message);
+          }
       }
   };
 
@@ -199,4 +203,3 @@ export const Auth: React.FC = () => {
     </div>
   );
 };
-    
