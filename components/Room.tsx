@@ -27,7 +27,7 @@ import {
   Trash2, RotateCcw, Power, Users,
   Play, Upload, Disc3, Music2, Pause, SkipForward,
   ShieldAlert, ShieldCheck, VolumeX, UserCheck, Ban, Maximize2, Search, Settings, Smile, CheckCircle2,
-  ArrowDownToLine
+  ArrowDownToLine, Coins
 } from 'lucide-react';
 
 interface RoomProps {

@@ -149,6 +149,7 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [allowUserRoomCreation, setAllowUserRoomCreation] = useState(false); // Global room creation setting
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   
   const [stats, setStats] = useState({ totalUsers: 0, activeRooms: 0, onlineListeners: 0, totalCoins: 0, pendingReports: 0 });
 
@@ -319,58 +320,92 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   const fetchAdminStats = async () => {
     if (!isAuthReady) return; // Guard
     setLoading(true);
+    setPermissionError(null);
+
+    // Safe fetch helper to prevent crashing
+    const safeGetDocs = async (q: any) => {
+        try {
+            return await getDocs(q);
+        } catch (e: any) {
+            console.warn(`Fetch failed: ${e.code}`);
+            if (e.code === 'permission-denied') {
+                setPermissionError("Database Permissions Missing. Check Firestore Rules.");
+            }
+            return { docs: [], size: 0, empty: true };
+        }
+    };
+
     try {
+      // 1. Fetch Rooms
       const roomsQuery = query(collection(db, 'rooms'), orderBy('createdAt', 'desc'));
-      const roomsSnap = await getDocs(roomsQuery);
-      setAdminRooms(roomsSnap.docs.map(d => ({ ...d.data(), id: d.id } as Room)));
+      const roomsSnap = await safeGetDocs(roomsQuery);
+      setAdminRooms(roomsSnap.docs.map((d: any) => ({ ...d.data(), id: d.id } as Room)));
 
+      // 2. Fetch Listeners
       const listenersQuery = query(collection(db, 'users'), where('isAuthorizedListener', '==', true));
-      const listenersSnap = await getDocs(listenersQuery);
-      setAdminListeners(listenersSnap.docs.map(d => ({ ...d.data(), uid: d.id } as UserProfile)));
+      const listenersSnap = await safeGetDocs(listenersQuery);
+      setAdminListeners(listenersSnap.docs.map((d: any) => ({ ...d.data(), uid: d.id } as UserProfile)));
 
-      const activeListenersSnap = await getDocs(collection(db, 'activeListeners'));
-      setAdminOnlineListeners(activeListenersSnap.docs.map(d => ({ ...d.data(), uid: d.id } as ActiveListener)));
+      const activeListenersSnap = await safeGetDocs(collection(db, 'activeListeners'));
+      setAdminOnlineListeners(activeListenersSnap.docs.map((d: any) => ({ ...d.data(), uid: d.id } as ActiveListener)));
 
-      // Fetch 20 Recent Users specifically for the User Management Tab
+      // 3. Fetch Recent Users
       const usersQuery = query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(20));
-      const usersSnap = await getDocs(usersQuery);
-      setRecentUsers(usersSnap.docs.map(d => ({ ...d.data(), uid: d.id } as UserProfile)));
+      const usersSnap = await safeGetDocs(usersQuery);
+      setRecentUsers(usersSnap.docs.map((d: any) => ({ ...d.data(), uid: d.id } as UserProfile)));
 
+      // 4. Fetch Misc
       const reportsQuery = query(collection(db, 'reports'), orderBy('timestamp', 'desc'));
-      const reportsSnap = await getDocs(reportsQuery);
-      setAdminReports(reportsSnap.docs.map(d => ({ ...d.data(), id: d.id } as Report)));
+      const reportsSnap = await safeGetDocs(reportsQuery);
+      setAdminReports(reportsSnap.docs.map((d: any) => ({ ...d.data(), id: d.id } as Report)));
 
       const stickersQuery = query(collection(db, 'stickers'), orderBy('createdAt', 'desc'));
-      const stickersSnap = await getDocs(stickersQuery);
-      setAdminStickers(stickersSnap.docs.map(d => ({ ...d.data(), id: d.id } as Sticker)));
+      const stickersSnap = await safeGetDocs(stickersQuery);
+      setAdminStickers(stickersSnap.docs.map((d: any) => ({ ...d.data(), id: d.id } as Sticker)));
 
       const giftsQuery = query(collection(db, 'gifts'), orderBy('price', 'asc'));
-      const giftsSnap = await getDocs(giftsQuery);
-      setAdminGifts(giftsSnap.docs.map(d => ({ ...d.data(), id: d.id } as GiftItem)));
+      const giftsSnap = await safeGetDocs(giftsQuery);
+      setAdminGifts(giftsSnap.docs.map((d: any) => ({ ...d.data(), id: d.id } as GiftItem)));
 
       const bgQuery = query(collection(db, 'roomBackgrounds'), orderBy('createdAt', 'desc'));
-      const bgSnap = await getDocs(bgQuery);
-      setAdminBackgrounds(bgSnap.docs.map(d => ({ ...d.data(), id: d.id } as RoomBackground)));
+      const bgSnap = await safeGetDocs(bgQuery);
+      setAdminBackgrounds(bgSnap.docs.map((d: any) => ({ ...d.data(), id: d.id } as RoomBackground)));
       
       const framesQuery = query(collection(db, 'frames'), orderBy('createdAt', 'desc'));
-      const framesSnap = await getDocs(framesQuery);
-      setAdminFrames(framesSnap.docs.map(d => ({ ...d.data(), id: d.id } as Frame)));
+      const framesSnap = await safeGetDocs(framesQuery);
+      setAdminFrames(framesSnap.docs.map((d: any) => ({ ...d.data(), id: d.id } as Frame)));
 
-      const sysDoc = await getDoc(doc(db, 'system', 'general'));
-      if (sysDoc.exists()) {
-          const data = sysDoc.data();
-          setMaintenanceMode(data.maintenanceMode || false);
-          setAllowUserRoomCreation(data.allowUserRoomCreation || false);
+      // 5. Fetch System Settings (Handle Missing Doc)
+      try {
+          const sysDocRef = doc(db, 'system', 'general');
+          const sysDoc = await getDoc(sysDocRef);
+          
+          if (sysDoc.exists()) {
+              const data = sysDoc.data();
+              setMaintenanceMode(data.maintenanceMode || false);
+              setAllowUserRoomCreation(data.allowUserRoomCreation || false);
+          } else {
+              // Create default settings if missing
+              await setDoc(sysDocRef, { maintenanceMode: false, allowUserRoomCreation: false });
+          }
+      } catch (e: any) {
+          console.warn("System doc access failed", e);
+          // Don't crash here
       }
 
       setStats({
-        totalUsers: 100 + usersSnap.size, // Basic offset for demo
-        activeRooms: roomsSnap.docs.filter(d => d.data().active).length,
-        onlineListeners: activeListenersSnap.size,
-        totalCoins: usersSnap.docs.reduce((acc, curr) => acc + (curr.data().walletBalance || 0), 0),
-        pendingReports: reportsSnap.docs.filter(d => d.data().status === 'pending').length
+        totalUsers: 100 + (usersSnap.size || 0), 
+        activeRooms: roomsSnap.docs.filter((d: any) => d.data().active).length,
+        onlineListeners: activeListenersSnap.size || 0,
+        totalCoins: usersSnap.docs.reduce((acc: number, curr: any) => acc + (curr.data().walletBalance || 0), 0),
+        pendingReports: reportsSnap.docs.filter((d: any) => d.data().status === 'pending').length
       });
-    } catch (e) { console.error("Admin fetch error", e); } finally { setLoading(false); }
+
+    } catch (e) { 
+        console.error("Admin fetch crash", e); 
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   useEffect(() => { if (showAdminPanel && isAdmin && isAuthReady) fetchAdminStats(); }, [showAdminPanel, adminTab, isAuthReady]);
@@ -399,9 +434,9 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
               await deleteDoc(doc(db, 'activeListeners', uid));
               alert("Listener forced offline.");
               fetchAdminStats();
-          } catch(e) {
+          } catch(e: any) {
               console.error(e);
-              alert("Failed to force offline.");
+              alert("Failed to force offline: " + e.message);
           }
       }
   };
@@ -421,13 +456,13 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
               participants: [],
               lockedSeats: [],
               active: true,
-              admins: [fetchedAdminUser.uid] // User becomes admin of their own room
+              admins: [fetchedAdminUser.uid] 
           });
           alert(`Room "${roomName}" assigned to ${fetchedAdminUser.displayName}`);
           fetchAdminStats();
-      } catch (e) {
+      } catch (e: any) {
           console.error(e);
-          alert("Failed to assign room");
+          alert("Failed to assign room: " + e.message);
       } finally {
           setLoading(false);
       }
@@ -436,6 +471,15 @@ export const Profile: React.FC<ProfileProps> = ({ user, onLogout, onUpdate, onJo
   // --- Render Sections for Admin ---
   const renderAdminDashboard = () => (
       <div className="h-full overflow-y-auto native-scroll p-4 md:p-8 space-y-6">
+          {permissionError && (
+              <div className="bg-red-500/20 border border-red-500 text-red-100 p-4 rounded-xl flex items-center gap-3">
+                  <ShieldAlert size={24} className="shrink-0"/>
+                  <div>
+                      <h4 className="font-bold">Access Limited</h4>
+                      <p className="text-xs opacity-80">{permissionError}</p>
+                  </div>
+              </div>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fade-in">
               <StatCard label="Total Users" value={stats.totalUsers} icon={Users} color="text-violet-500" />
               <StatCard label="Active Rooms" value={stats.activeRooms} icon={Mic} color="text-emerald-500" />
