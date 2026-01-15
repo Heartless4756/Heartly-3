@@ -102,7 +102,7 @@ export interface PrivateMessage {
   senderId: string;
   createdAt: number;
   read: boolean;
-  type?: 'text' | 'invite';
+  type?: 'text' | 'invite' | 'image';
   roomId?: string; // For invite
   roomPassword?: string; // Encrypted password for invite
 }
@@ -138,6 +138,13 @@ export interface Report {
   reason: string;
   timestamp: number;
   status: 'pending' | 'resolved';
+}
+
+export interface GameState {
+  roundId: number;
+  endTime: number;
+  lastResult: number | null; // 0-7
+  history: number[];
 }
 
 export type ViewState = 'rooms' | 'chats' | 'listeners' | 'me';

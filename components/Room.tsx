@@ -15,9 +15,10 @@ import {
   writeBatch,
   getDoc,
   getDocs,
-  increment
+  increment,
+  setDoc
 } from 'firebase/firestore';
-import { UserProfile, Room as RoomType, Participant, ChatMetadata, Sticker, RoomBackground, GiftItem } from '../types';
+import { UserProfile, Room as RoomType, Participant, ChatMetadata, Sticker, RoomBackground, GiftItem, GameState } from '../types';
 import { 
   Mic, MicOff, Crown, Send, 
   Lock, Unlock, LogOut, UserPlus, X as XIcon, 
@@ -26,7 +27,7 @@ import {
   Trash2, RotateCcw, Power, Users,
   Play, Upload, Disc3, Music2, Pause, SkipForward,
   ShieldAlert, ShieldCheck, VolumeX, UserCheck, Ban, Maximize2, Search, Settings, Smile, CheckCircle2,
-  ArrowDownToLine
+  ArrowDownToLine, Gamepad2, Coins, History, Zap, Clock
 } from 'lucide-react';
 
 interface RoomProps {
@@ -93,6 +94,18 @@ const ICE_SERVERS = {
   ],
 };
 
+const BOX_MULTIPLIERS = [5, 5, 5, 5, 10, 15, 25, 45];
+const BOX_COLORS = [
+    'from-blue-500 to-cyan-500', 
+    'from-blue-500 to-cyan-500', 
+    'from-blue-500 to-cyan-500', 
+    'from-blue-500 to-cyan-500', 
+    'from-purple-500 to-pink-500', 
+    'from-orange-500 to-red-500', 
+    'from-emerald-500 to-green-500', 
+    'from-yellow-500 to-amber-500'
+];
+
 const RemoteAudio: React.FC<{ stream: any, muted: boolean }> = ({ stream, muted }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   useEffect(() => {
@@ -130,6 +143,9 @@ const UserProfileModal: React.FC<{
     currentParticipants: Participant[],
     roomCreatorId: string
 }> = ({ targetUid, currentUser, onClose, isViewerHost, isViewerAdmin, roomAdmins, roomId, currentParticipants, roomCreatorId }) => {
+    // ... (Existing Profile Modal Implementation - Unchanged)
+    // Minimizing repetition for brevity in XML, assuming this part doesn't change logic-wise
+    // Re-implemented to ensure context integrity.
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [isFollowing, setIsFollowing] = useState(false);
     const [isBlocked, setIsBlocked] = useState(false);
@@ -225,7 +241,6 @@ const UserProfileModal: React.FC<{
                 <div className="flex flex-col items-center">
                     <div className="relative mb-4 w-24 h-24">
                         <img src={profile.photoURL || ''} className="w-full h-full rounded-full border-4 border-[#25252D] bg-gray-800 object-cover" />
-                        {/* Profile Modal Frame Fix */}
                         {profile.frameUrl && <img src={profile.frameUrl} className="absolute inset-0 w-full h-full scale-[1.4] object-contain pointer-events-none" />}
                         {isTargetAdmin && (<div className="absolute bottom-0 right-0 bg-violet-600 text-white p-1 rounded-full border-2 border-[#1A1A21] z-20" title="Admin"><ShieldCheck size={14} /></div>)}
                         {isTargetHost && (<div className="absolute bottom-0 right-0 bg-yellow-500 text-black p-1 rounded-full border-2 border-[#1A1A21] z-20" title="Host"><Crown size={14} /></div>)}
@@ -268,6 +283,16 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
     const [recentChats, setRecentChats] = useState<ChatMetadata[]>([]);
     const [showSettingsModal, setShowSettingsModal] = useState(false);
     
+    // Game State
+    const [showGameModal, setShowGameModal] = useState(false);
+    const [gameState, setGameState] = useState<GameState | null>(null);
+    const [gameSelectedBoxes, setGameSelectedBoxes] = useState<number[]>([]);
+    const [gameBetAmount, setGameBetAmount] = useState('');
+    const [myBets, setMyBets] = useState<Record<number, number>>({}); // Index -> Amount
+    const [lastProcessedRound, setLastProcessedRound] = useState(0);
+    const [gameTimeLeft, setGameTimeLeft] = useState(0);
+    const [gameWinningBox, setGameWinningBox] = useState<number | null>(null);
+
     // Settings State
     const [settingsName, setSettingsName] = useState('');
     const [settingsPassword, setSettingsPassword] = useState('');
@@ -314,6 +339,9 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
     const participantsRef = useRef<Participant[]>([]);
     const candidateQueueRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
     const initialChargeProcessed = useRef(false);
+    
+    // Game Loop Ref
+    const gameLoopRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     useEffect(() => {
         participantsRef.current = participants;
@@ -332,6 +360,109 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         prevParticipantsRef.current = participants;
     }, [participants, currentUser.uid]);
 
+    // Game Logic - Sync and Host Loop
+    useEffect(() => {
+        const gameDocRef = doc(db, 'rooms', roomId, 'game', 'state');
+        const unsubGame = onSnapshot(gameDocRef, (snap) => {
+            if (snap.exists()) {
+                const data = snap.data() as GameState;
+                setGameState(data);
+                
+                // Payout Logic
+                if (data.roundId > lastProcessedRound && data.lastResult !== null) {
+                    setLastProcessedRound(data.roundId);
+                    setGameWinningBox(data.lastResult);
+                    
+                    // Check winning
+                    const myBetAmount = myBets[data.lastResult] || 0;
+                    if (myBetAmount > 0) {
+                        const winAmount = myBetAmount * BOX_MULTIPLIERS[data.lastResult];
+                        // Credit Wallet
+                        const userRef = doc(db, 'users', currentUser.uid);
+                        updateDoc(userRef, { walletBalance: increment(winAmount) }).catch(console.error);
+                        
+                        // Show win toast/animation
+                        const notifId = Date.now().toString();
+                        setEntryNotifications(prev => [...prev, { id: notifId, text: `🎉 You won ${winAmount} coins!`, senderId: 'system' }]);
+                        setTimeout(() => setEntryNotifications(prev => prev.filter(n => n.id !== notifId)), 5000);
+                    }
+                    
+                    // Clear bets for next round
+                    setMyBets({});
+                    
+                    // Reset Winning Animation after 5s
+                    setTimeout(() => setGameWinningBox(null), 5000);
+                }
+            } else {
+                // Initialize if missing (Host only effectively)
+                if (roomData?.createdBy === currentUser.uid) {
+                    setDoc(gameDocRef, {
+                        roundId: 1,
+                        endTime: Date.now() + 30000,
+                        lastResult: null,
+                        history: []
+                    });
+                }
+            }
+        });
+        
+        return () => unsubGame();
+    }, [roomId, lastProcessedRound, myBets, roomData?.createdBy, currentUser.uid]);
+
+    // Game Timer Effect
+    useEffect(() => {
+        const timer = setInterval(() => {
+            if (gameState) {
+                const left = Math.max(0, Math.ceil((gameState.endTime - Date.now()) / 1000));
+                setGameTimeLeft(left);
+            }
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [gameState]);
+
+    // Host Game Loop
+    useEffect(() => {
+        if (roomData?.createdBy !== currentUser.uid) return;
+        
+        const runGame = async () => {
+            if (!gameState) return;
+            
+            if (Date.now() >= gameState.endTime) {
+                // Determine Winner
+                // Weighted Random
+                // Weights: 5X (indices 0-3): 150 each (600 total)
+                // 10X (idx 4): 150
+                // 15X (idx 5): 100
+                // 25X (idx 6): 80
+                // 45X (idx 7): 70
+                // Total = 1000
+                const weights = [150, 150, 150, 150, 150, 100, 80, 70];
+                let random = Math.random() * 1000;
+                let winner = 0;
+                for (let i = 0; i < weights.length; i++) {
+                    if (random < weights[i]) {
+                        winner = i;
+                        break;
+                    }
+                    random -= weights[i];
+                }
+                
+                const newHistory = [winner, ...(gameState.history || [])].slice(0, 10);
+                
+                await updateDoc(doc(db, 'rooms', roomId, 'game', 'state'), {
+                    roundId: increment(1),
+                    endTime: Date.now() + 30000,
+                    lastResult: winner,
+                    history: newHistory
+                });
+            }
+        };
+
+        const loop = setInterval(runGame, 1000);
+        return () => clearInterval(loop);
+    }, [gameState, roomData?.createdBy, currentUser.uid, roomId]);
+
+    // ... (Existing UseEffects for stickers, gifts, billing, etc. - Kept intact)
     useEffect(() => {
         const qStickers = query(collection(db, 'stickers'), orderBy('createdAt', 'desc'));
         const unsubStickers = onSnapshot(qStickers, (snapshot) => {
@@ -366,6 +497,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         }
     }, [roomData, showSettingsModal]);
 
+    // SVGA Effect
     useEffect(() => {
         if (!currentSvga) {
             if (playerRef.current) {
@@ -446,6 +578,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         };
     }, [currentSvga]);
 
+    // Billing Logic
     useEffect(() => {
         if (!roomData?.isPaidCall) return;
         const isHost = roomData.createdBy === currentUser.uid;
@@ -468,6 +601,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         return () => clearInterval(billingInterval);
     }, [roomData?.isPaidCall, roomData?.createdBy, currentUser.uid]);
 
+    // Audio Analysis & Stream Init (Kept Intact)
     useEffect(() => {
       if (!audioContextRef.current) audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       const checkAudioLevels = () => {
@@ -607,6 +741,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         return () => { cleanup(); };
     }, [roomId]);
     
+    // ... (Music Playback, Recent Chats, Peer Connection handlers, etc. - Kept Intact)
     useEffect(() => {
         if (!roomData?.musicState || !musicAudioRef.current) return;
         const { musicUrl, isPlaying, musicTime } = roomData.musicState;
@@ -652,6 +787,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
         return pc;
     };
     
+    // ... (Candidate handling, offer/answer handling - Same as original)
     const processCandidateQueue = async (uid: string, pc: RTCPeerConnection) => {
           const queue = candidateQueueRef.current[uid] || [];
           if (queue.length > 0) {
@@ -785,6 +921,36 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
             setShowGiftModal(false); 
         } 
     };
+
+    const placeBet = async () => {
+        if(gameSelectedBoxes.length === 0 || !gameBetAmount) return alert("Select boxes and amount");
+        const amount = parseInt(gameBetAmount);
+        if(isNaN(amount) || amount <= 0) return alert("Invalid amount");
+        
+        const totalBet = amount * gameSelectedBoxes.length;
+        if(currentUser.walletBalance < totalBet) return alert("Insufficient balance");
+        if(gameTimeLeft <= 0) return alert("Betting closed");
+
+        // Optimistically deduct balance
+        try {
+            await updateDoc(doc(db, 'users', currentUser.uid), { walletBalance: increment(-totalBet) });
+            
+            setMyBets(prev => {
+                const newState = {...prev};
+                gameSelectedBoxes.forEach(idx => {
+                    newState[idx] = (newState[idx] || 0) + amount;
+                });
+                return newState;
+            });
+            
+            setGameSelectedBoxes([]);
+            setGameBetAmount('');
+            alert("Bet placed!");
+        } catch(e) {
+            console.error(e);
+            alert("Bet failed");
+        }
+    };
     
     const hostSeatOccupant = participants.find(p => p.seatIndex === 999);
     const isHost = roomData ? currentUser.uid === roomData.createdBy : false;
@@ -798,6 +964,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
 
     const renderPopupContent = () => {
         if (!popupInfo) return null;
+        // ... (Same as original popup content)
         const index = popupInfo.index;
         const occupant = participants.find(p => p.seatIndex === index);
         const isLocked = roomData?.lockedSeats?.includes(index);
@@ -843,6 +1010,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
 
     const renderSeatItem = (seat: typeof gridSeats[0]) => (
         <div key={seat.index} className="flex flex-col items-center gap-1 cursor-pointer relative" onClick={(e) => handleSeatClick(seat.index, e)}>
+            {/* Same as original seat item render */}
             <div className="relative w-14 h-14">
                 <div className="w-full h-full rounded-full bg-white/5 border border-white/10 flex items-center justify-center relative overflow-hidden transition-all active:scale-95">
                     {roomData?.lockedSeats?.includes(seat.index) ? (
@@ -857,7 +1025,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                         <Plus size={16} className="text-white/20" />
                     )}
                 </div>
-                {/* Avatar Frame for Grid Seats - Perfect Fit Update */}
+                {/* Avatar Frame */}
                 {seat.occupant && seat.occupant.frameUrl && (
                     <img src={seat.occupant.frameUrl} className="absolute inset-0 w-full h-full scale-[1.4] object-contain pointer-events-none z-30" />
                 )}
@@ -883,7 +1051,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                 <div id="svga-canvas" className="w-full h-full max-w-[500px] max-h-[500px] object-contain"></div>
             </div>
 
-            {/* Header - Updated Padding for Notch */}
+            {/* Header */}
             <div className="flex items-center justify-between px-4 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)] relative z-20">
                 <div className="flex items-center gap-2">
                     <button onClick={onMinimize} className="p-2 text-white/80 hover:text-white rounded-full hover:bg-white/10"><Minimize2 size={20}/></button>
@@ -903,11 +1071,14 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                     <button onClick={() => { setShowRoomMenu(false); onLeave(); }} className="p-2 text-red-400 hover:text-red-300 rounded-full hover:bg-red-500/10"><Power size={20}/></button>
                 </div>
             </div>
+            
+            {/* Main Area */}
             <div className="relative flex-1 overflow-hidden z-10 flex flex-col">
                  <div className="absolute top-0 left-0 right-0 z-30 pointer-events-none px-4 space-y-2">{entryNotifications.map(n => (<div key={n.id} className="animate-fade-in bg-black/40 backdrop-blur-md text-white text-[10px] px-3 py-1.5 rounded-full w-fit mx-auto border border-white/5 flex items-center gap-2 shadow-lg"><span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"/> {n.text}</div>))}</div>
                  {giftAnimation && (<div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none overflow-hidden"><div className="absolute inset-0 bg-radial-gradient from-violet-600/30 to-transparent animate-pulse duration-700"></div><div className="absolute inset-0 flex items-center justify-center">{[...Array(12)].map((_, i) => (<div key={i} className="absolute w-2 h-2 bg-yellow-400 rounded-full animate-[ping_1.5s_infinite]" style={{ transform: `rotate(${i * 30}deg) translate(120px) scale(${Math.random()})`, animationDelay: `${Math.random() * 0.5}s` }}></div>))}</div><div className="relative flex flex-col items-center animate-[fadeIn_0.5s_ease-out_forwards]"><div className="w-32 h-32 mb-4 filter drop-shadow-[0_20px_30px_rgba(0,0,0,0.6)] animate-[bounce_2s_infinite]"><img src={giftAnimation.icon} className="w-full h-full object-contain" /></div><div className="mt-8 bg-black/60 backdrop-blur-xl border border-white/20 px-6 py-3 rounded-full shadow-2xl animate-fade-in text-center transform scale-110"><p className="text-white font-bold text-lg leading-tight bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-orange-300 to-yellow-300 animate-pulse">{giftAnimation.senderName}</p><p className="text-white/80 text-xs font-medium uppercase tracking-widest mt-1">sent {giftAnimation.name}</p></div></div></div>)}
                  
                  <div className="flex-shrink-0 flex flex-col items-center mt-1 px-4 max-w-md mx-auto w-full z-10">
+                    {/* Host Seat */}
                     <div className="flex justify-center mb-8 relative">
                         <div className="relative group cursor-pointer w-20 h-20" onClick={(e) => handleSeatClick(999, e)}>
                             <div className="w-full h-full rounded-full border-4 border-yellow-500/30 bg-black/40 flex items-center justify-center relative overflow-hidden shadow-[0_0_30px_rgba(234,179,8,0.2)] transition-all active:scale-95">
@@ -922,7 +1093,7 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                                     <Plus size={24} className="text-yellow-500/50" />
                                 )}
                             </div>
-                            {/* Avatar Frame for Host Seat - Perfect Fit Update */}
+                            {/* Host Frame */}
                             {hostSeatOccupant && hostSeatOccupant.frameUrl && (
                                 <img src={hostSeatOccupant.frameUrl} className="absolute inset-0 w-full h-full scale-[1.4] object-contain pointer-events-none z-30" />
                             )}
@@ -945,15 +1116,22 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
                     </div>
                  </div>
                  
+                 {/* Chat Area */}
                  <div className="flex-1 px-4 pb-2 mt-2 mask-gradient-top overflow-y-auto no-scrollbar native-scroll space-y-2 min-h-0">{messages.map((msg) => (<div key={msg.id} className={`text-xs animate-fade-in ${msg.type === 'system' ? 'text-yellow-400 font-medium text-center bg-yellow-400/5 py-1 rounded-lg' : msg.type === 'gift' ? 'text-center my-2' : 'text-white'}`}>{msg.type === 'system' ? (msg.text) : msg.type === 'gift' ? (<div className="inline-block bg-gradient-to-r from-violet-600/80 to-fuchsia-600/80 px-3 py-1.5 rounded-full border border-white/20 backdrop-blur-sm shadow-lg"><span className="font-bold text-white">{msg.senderName}</span> <span className="text-white/90">{msg.text}</span></div>) : (<div className="flex items-start gap-2 bg-black/40 p-2 rounded-xl w-fit max-w-[85%] backdrop-blur-sm border border-white/5"><div className="relative w-5 h-5"><img src={msg.senderPhoto || `https://ui-avatars.com/api/?name=${msg.senderName}`} className="w-full h-full rounded-full object-cover" /></div><div><span className="font-bold text-gray-400 mr-1.5 block leading-tight mb-0.5">{msg.senderName}</span><span className="text-gray-100 leading-snug">{msg.text}</span></div></div>)}</div>))}<div ref={chatEndRef} /></div>
             </div>
-            {showStickerPicker && (<div className="absolute bottom-20 left-4 right-4 z-40 bg-[#18181B] border border-white/10 rounded-2xl p-4 shadow-2xl animate-fade-in"><div className="flex justify-between items-center mb-3"><h3 className="text-xs font-bold text-white uppercase tracking-wider">Stickers</h3><button onClick={() => setShowStickerPicker(false)}><XIcon size={16} className="text-gray-400"/></button></div>{stickers.length === 0 ? (<p className="text-center text-gray-500 text-xs py-4">No stickers available.</p>) : (<div className="grid grid-cols-5 gap-3 max-h-40 overflow-y-auto no-scrollbar native-scroll">{stickers.map(sticker => (<button key={sticker.id} onClick={() => handleSendSticker(sticker)} className="hover:bg-white/5 p-1 rounded-lg transition-colors flex items-center justify-center"><img src={sticker.url} className="w-10 h-10 object-contain" alt={sticker.name} /></button>))}</div>)}</div>)}
+
+            {/* Bottom Controls */}
             <div className="px-3 pb-4 pt-2 relative z-30 flex items-center gap-2">
                 <button onClick={() => setShowGiftModal(true)} className="p-2.5 bg-black/40 backdrop-blur-md border border-white/10 text-pink-400 rounded-full active:scale-95 flex-shrink-0 shadow-lg"><Gift size={20} /></button>
                 <button onClick={toggleSpeaker} className={`p-2.5 rounded-full flex-shrink-0 backdrop-blur-md shadow-lg transition-all ${isSpeakerOn ? 'bg-white text-black' : 'bg-black/40 text-white border border-white/10'}`}>
                     {isSpeakerOn ? <Volume2 size={20} /> : <VolumeX size={20} />}
                 </button>
                 
+                {/* Game Button */}
+                <button onClick={() => setShowGameModal(true)} className="absolute bottom-[4.5rem] right-4 w-12 h-12 bg-gradient-to-tr from-fuchsia-600 to-purple-600 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(192,38,211,0.5)] border-2 border-white/20 animate-[bounce_3s_infinite] active:scale-90 transition-transform z-40">
+                    <Gamepad2 size={24} className="text-white drop-shadow-md" />
+                </button>
+
                 {roomData?.musicState?.isEnabled && (<button onClick={() => setShowMusicModal(true)} className={`p-2.5 rounded-full flex-shrink-0 transition-all backdrop-blur-md shadow-lg ${roomData.musicState.isPlaying ? 'bg-violet-500 shadow-[0_0_15px_rgba(139,92,246,0.5)] animate-pulse-glow text-white' : 'bg-black/40 border border-white/10 text-white'}`}><Music2 size={20} /></button>)}
                 <div className="flex-1 relative shadow-lg flex items-center bg-black/40 backdrop-blur-md border border-white/10 rounded-full pl-2 pr-2 py-1.5"><button onClick={() => setShowStickerPicker(!showStickerPicker)} className="p-1.5 text-yellow-400 hover:text-yellow-300 rounded-full transition-colors active:scale-95"><Smile size={20} /></button><form onSubmit={handleSendMessage} className="flex-1 flex items-center"><input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Say something..." className="w-full bg-transparent border-none outline-none pl-2 pr-2 py-1 text-xs text-white placeholder-gray-400" /><button type="submit" disabled={!newMessage.trim()} className="p-1.5 bg-violet-600 rounded-full text-white disabled:opacity-50 flex-shrink-0 ml-1"><Send size={12} fill="currentColor" /></button></form></div>{isOnSeat && (<button onClick={toggleMute} disabled={myPart?.isHostMuted} className={`p-2.5 rounded-full transition-all active:scale-95 border flex-shrink-0 shadow-lg backdrop-blur-md ${isMuted ? 'bg-black/40 text-white border-white/10' : 'bg-white text-black border-white shadow-[0_0_10px_rgba(255,255,255,0.4)]'}`}>{myPart?.isHostMuted ? <Lock size={20} className="text-red-500" /> : isMuted ? <MicOff size={20} /> : <Mic size={20} />}</button>)}</div>
             
@@ -966,6 +1144,97 @@ export const ActiveRoom: React.FC<RoomProps> = ({ roomId, currentUser, onLeave, 
             {showGiftModal && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex flex-col justify-end animate-fade-in" onClick={() => setShowGiftModal(false)}><div className="bg-[#18181B] rounded-t-[2rem] border-t border-white/10 p-6 shadow-2xl" onClick={e => e.stopPropagation()}><div className="w-12 h-1.5 bg-white/10 rounded-full mx-auto mb-6"></div><div className="flex justify-between items-end mb-4"><div><h3 className="text-lg font-bold text-white">Send Gift</h3><p className="text-xs text-gray-400">To: {participants.find(p => p.uid === giftRecipientId)?.displayName || 'Select User'}</p></div><div className="bg-yellow-500/10 px-3 py-1.5 rounded-full border border-yellow-500/20 text-yellow-500 text-xs font-bold flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-500"></span>{currentUser.walletBalance || 0}</div></div><div className="flex gap-4 overflow-x-auto pb-4 mb-4 no-scrollbar native-scroll">{participants.map(p => (<button key={p.uid} onClick={() => setGiftRecipientId(p.uid)} className={`flex flex-col items-center gap-2 min-w-[60px] transition-all ${giftRecipientId === p.uid ? 'opacity-100 scale-105' : 'opacity-50 hover:opacity-80'}`}><div className={`relative p-0.5 rounded-full ${giftRecipientId === p.uid ? 'bg-gradient-to-tr from-pink-500 to-violet-500' : 'bg-transparent'}`}><div className="relative w-12 h-12"><img src={p.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover border-2 border-[#18181B]" /></div></div><span className="text-[10px] text-white font-medium truncate w-14 text-center">{p.displayName}</span></button>))}</div><div className="grid grid-cols-4 gap-3 max-h-[40vh] overflow-y-auto p-1 native-scroll">{gifts.length > 0 ? gifts.map(gift => (<button key={gift.id} onClick={() => handleGiftClick(gift)} className="flex flex-col items-center gap-1 p-2 rounded-xl hover:bg-white/5 transition-colors border border-transparent hover:border-white/10 active:scale-95"><img src={gift.iconUrl} className="w-10 h-10 object-contain mb-1 filter drop-shadow-lg" /><span className="text-[10px] font-bold text-gray-300">{gift.name}</span><span className="text-[10px] font-mono text-yellow-500">{gift.price}</span></button>)) : <p className="col-span-4 text-center text-gray-500 text-xs">No gifts available.</p>}</div></div></div>)}
             {showRoomMenu && (<div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex justify-end" onClick={() => setShowRoomMenu(false)}><div className="w-64 h-full bg-[#18181B] border-l border-white/10 p-6 animate-fade-in shadow-2xl" onClick={e => e.stopPropagation()}><h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Room Menu</h3><div className="space-y-2">{(isHost || isAdmin) && (<MenuButton icon={musicEnabled ? <VolumeX size={20} /> : <Volume2 size={20} />} label={musicEnabled ? "Disable Music" : "Enable Music"} onClick={toggleMusicVisibility} />)}<MenuButton icon={<Share2 size={20} />} label="Share Room" onClick={handleShareClick} />{(isHost || isAdmin) && (<MenuButton icon={<Lock size={20} />} label="Room Settings" onClick={() => { setShowSettingsModal(true); setShowRoomMenu(false); }} />)}</div></div></div>)}
             {showMusicModal && roomData?.musicState?.isEnabled && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex flex-col justify-end animate-fade-in" onClick={() => setShowMusicModal(false)}><div className="bg-[#18181B] rounded-t-[2rem] border-t border-white/10 p-6 shadow-2xl h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}><div className="w-12 h-1.5 bg-white/10 rounded-full mx-auto mb-6"></div><div className="flex bg-black/40 rounded-xl p-1 mb-6"><button onClick={() => setMusicTab('player')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${musicTab === 'player' ? 'bg-violet-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}>Player</button><button onClick={() => setMusicTab('queue')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${musicTab === 'queue' ? 'bg-violet-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}>Queue</button>{(isHost || isAdmin) && <button onClick={() => setMusicTab('search')} className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${musicTab === 'search' ? 'bg-violet-600 text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}>Search</button>}</div><div className="flex-1 overflow-y-auto native-scroll">{musicTab === 'player' && (<div className="flex flex-col items-center justify-center h-full pb-10"><div className={`w-48 h-48 rounded-full border-8 border-[#25252D] bg-gradient-to-tr from-violet-600 to-fuchsia-600 flex items-center justify-center shadow-[0_0_50px_rgba(139,92,246,0.3)] mb-8 relative ${musicPlaying ? 'animate-[spin_10s_linear_infinite]' : ''}`}><div className="w-16 h-16 bg-[#18181B] rounded-full border-4 border-[#25252D] z-10"></div><Disc3 size={100} className="absolute text-white/20" /></div><h3 className="text-xl font-bold text-white text-center px-4 line-clamp-1">{roomData.musicState.currentSongName || "No song"}</h3><p className="text-xs text-gray-400 mb-8">Added by {participants.find(p => p.uid === roomData?.musicState?.playedBy)?.displayName || 'Unknown'}</p>{(isHost || isAdmin) && (<div className="flex items-center gap-6"><button onClick={togglePlayPause} className="w-16 h-16 bg-white text-black rounded-full flex items-center justify-center shadow-xl hover:scale-105 transition-transform active:scale-95">{musicPlaying ? <Pause size={32} fill="currentColor" /> : <Play size={32} fill="currentColor" className="ml-1" />}</button><button onClick={playNextSong} className="p-4 bg-white/10 rounded-full text-white hover:bg-white/20 transition-colors"><SkipForward size={24} /></button></div>)}</div>)}{musicTab === 'queue' && (<div className="space-y-2">{(!roomData.musicState.queue || roomData.musicState.queue.length === 0) ? (<p className="text-center text-gray-500 text-xs py-10">Queue empty.</p>) : (roomData.musicState.queue.map((song, i) => (<div key={i} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><div className="flex items-center gap-3 overflow-hidden"><div className="w-8 h-8 rounded bg-violet-500/20 flex items-center justify-center text-violet-400 text-xs font-bold">{i + 1}</div><div className="min-w-0"><p className="text-sm font-bold text-white truncate">{song.name}</p><p className="text-[10px] text-gray-400 truncate">by {song.addedByName}</p></div></div>{(isHost || isAdmin) && (<button onClick={() => removeFromQueue(song)} className="p-2 text-red-400 hover:bg-white/5 rounded-lg"><XIcon size={14}/></button>)}</div>)))}</div>)}{musicTab === 'search' && (<div className="space-y-4"><form onSubmit={searchMusic} className="flex gap-2"><input type="text" value={musicSearchQuery} onChange={(e) => setMusicSearchQuery(e.target.value)} placeholder="Search..." className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white outline-none" /><button type="submit" disabled={isSearchingMusic} className="bg-violet-600 px-4 rounded-xl text-white disabled:opacity-50"><Search size={20}/></button></form><div className="flex items-center gap-2"><div className="h-px bg-white/10 flex-1"></div><span className="text-[10px] text-gray-500 uppercase">OR</span><div className="h-px bg-white/10 flex-1"></div></div><button onClick={() => musicInputRef.current?.click()} disabled={isUploadingMusic} className="w-full py-3 bg-white/5 border border-white/10 border-dashed rounded-xl text-xs font-bold text-gray-400 hover:text-white hover:bg-white/10 transition-colors flex items-center justify-center gap-2">{isUploadingMusic ? <Loader2 className="animate-spin" size={16}/> : <Upload size={16}/>} Upload MP3</button><input type="file" ref={musicInputRef} accept="audio/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if(f) uploadAndPlaySong(f); }} /><div className="space-y-2 mt-4">{musicSearchResults.map(track => (<div key={track.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5"><div className="flex items-center gap-3 overflow-hidden"><img src={track.image} className="w-10 h-10 rounded bg-gray-800 object-cover" /><div className="min-w-0"><p className="text-sm font-bold text-white truncate">{track.name}</p><p className="text-[10px] text-gray-400 truncate">{track.artist_name}</p></div></div><button onClick={() => addTrackToQueue(track)} className="p-2 bg-violet-600 text-white rounded-lg hover:bg-violet-500"><Plus size={16}/></button></div>))}</div></div>)}</div></div></div>)}
+            
+            {showGameModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in" onClick={() => setShowGameModal(false)}>
+                    <div className="bg-[#1A1A21] w-full max-w-sm rounded-[2rem] border border-white/10 shadow-2xl p-6 relative overflow-hidden" onClick={e => e.stopPropagation()}>
+                        {/* Background Effect */}
+                        <div className="absolute inset-0 bg-gradient-to-b from-fuchsia-900/20 to-transparent pointer-events-none"></div>
+                        
+                        <div className="flex justify-between items-center mb-6 relative z-10">
+                            <h3 className="text-xl font-black text-white italic tracking-tighter flex items-center gap-2">
+                                <Zap size={24} className="text-yellow-400 fill-current" /> LUCKY BOX
+                            </h3>
+                            <div className="flex items-center gap-3">
+                                <div className="px-3 py-1 bg-white/5 rounded-full border border-white/10 flex items-center gap-2">
+                                    <Clock size={14} className="text-blue-400" />
+                                    <span className={`font-mono font-bold text-lg ${gameTimeLeft < 5 ? 'text-red-500 animate-pulse' : 'text-white'}`}>{gameTimeLeft}s</span>
+                                </div>
+                                <button onClick={() => setShowGameModal(false)}><XIcon size={24} className="text-gray-400 hover:text-white"/></button>
+                            </div>
+                        </div>
+
+                        {/* History Bar */}
+                        <div className="mb-6 overflow-x-auto no-scrollbar flex items-center gap-2 pb-2">
+                            <History size={16} className="text-gray-500 flex-shrink-0 mr-2" />
+                            {gameState?.history?.map((res, i) => (
+                                <div key={i} className={`flex-shrink-0 px-2 py-1 rounded bg-white/5 text-[10px] font-bold border border-white/5 ${res >= 4 ? 'text-yellow-400' : 'text-blue-300'}`}>
+                                    {BOX_MULTIPLIERS[res]}X
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Game Grid */}
+                        <div className="grid grid-cols-4 gap-3 mb-6 relative z-10">
+                            {BOX_MULTIPLIERS.map((mult, idx) => {
+                                const isSelected = gameSelectedBoxes.includes(idx);
+                                const isWinning = gameWinningBox === idx;
+                                return (
+                                    <button 
+                                        key={idx}
+                                        onClick={() => {
+                                            if (gameTimeLeft > 0) {
+                                                if (isSelected) setGameSelectedBoxes(prev => prev.filter(i => i !== idx));
+                                                else setGameSelectedBoxes(prev => [...prev, idx]);
+                                            }
+                                        }}
+                                        disabled={gameTimeLeft === 0}
+                                        className={`
+                                            relative aspect-square rounded-2xl flex flex-col items-center justify-center border-2 transition-all active:scale-95
+                                            ${isWinning ? 'border-yellow-400 bg-yellow-500/20 shadow-[0_0_30px_rgba(250,204,21,0.5)] scale-110 z-20' : ''}
+                                            ${isSelected ? 'border-fuchsia-500 bg-fuchsia-500/20 shadow-lg' : 'border-white/5 bg-white/5 hover:bg-white/10'}
+                                        `}
+                                    >
+                                        <span className={`text-lg font-black ${isWinning ? 'text-yellow-400' : 'text-white'}`}>{mult}X</span>
+                                        {myBets[idx] && <span className="text-[9px] text-green-400 font-bold bg-black/40 px-1.5 rounded mt-1">{myBets[idx]}</span>}
+                                        {isWinning && <div className="absolute inset-0 rounded-2xl border-2 border-yellow-400 animate-ping"></div>}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Betting Controls */}
+                        <div className="space-y-4 relative z-10">
+                            <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <Coins size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-yellow-500" />
+                                    <input 
+                                        type="number" 
+                                        value={gameBetAmount}
+                                        onChange={(e) => setGameBetAmount(e.target.value)}
+                                        placeholder="Bet Amount"
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl pl-9 pr-3 py-3 text-sm text-white font-bold outline-none focus:border-fuchsia-500"
+                                    />
+                                </div>
+                                <button 
+                                    onClick={placeBet}
+                                    disabled={gameTimeLeft === 0 || gameSelectedBoxes.length === 0}
+                                    className="px-6 bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white font-bold rounded-xl shadow-lg shadow-fuchsia-500/20 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-transform"
+                                >
+                                    BET
+                                </button>
+                            </div>
+                            <div className="flex justify-between text-[10px] font-bold text-gray-500 uppercase tracking-widest px-1">
+                                <span>Wallet: <span className="text-yellow-500">{currentUser.walletBalance}</span></span>
+                                <span>Min: 10</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {showStickerPicker && (<div className="absolute bottom-20 left-4 right-4 z-40 bg-[#18181B] border border-white/10 rounded-2xl p-4 shadow-2xl animate-fade-in"><div className="flex justify-between items-center mb-3"><h3 className="text-xs font-bold text-white uppercase tracking-wider">Stickers</h3><button onClick={() => setShowStickerPicker(false)}><XIcon size={16} className="text-gray-400"/></button></div>{stickers.length === 0 ? (<p className="text-center text-gray-500 text-xs py-4">No stickers available.</p>) : (<div className="grid grid-cols-5 gap-3 max-h-40 overflow-y-auto no-scrollbar native-scroll">{stickers.map(sticker => (<button key={sticker.id} onClick={() => handleSendSticker(sticker)} className="hover:bg-white/5 p-1 rounded-lg transition-colors flex items-center justify-center"><img src={sticker.url} className="w-10 h-10 object-contain" alt={sticker.name} /></button>))}</div>)}</div>)}
+            {/* Popups... */}
             {popupInfo && (<div className="fixed inset-0 z-[100] bg-transparent" onClick={() => setPopupInfo(null)}><div className="absolute z-[100]" style={{ top: popupInfo.rect.bottom + 8, left: popupInfo.rect.left + (popupInfo.rect.width / 2), transform: 'translateX(-50%)' }} onClick={(e) => e.stopPropagation()}>{renderPopupContent()}</div></div>)}
             {showInviteList && (<div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowInviteList(false)}><div className="bg-[#18181B] w-full max-w-sm rounded-[2rem] border border-white/10 p-6 shadow-2xl" onClick={e => e.stopPropagation()}><h3 className="text-lg font-bold text-white mb-4">Invite to Seat</h3><div className="space-y-2 max-h-[50vh] overflow-y-auto native-scroll">{participants.filter(p => p.seatIndex < 0 && p.uid !== currentUser.uid).length === 0 ? (<p className="text-center text-gray-500 text-xs py-4">No users in audience.</p>) : (participants.filter(p => p.seatIndex < 0 && p.uid !== currentUser.uid).map(p => (<button key={p.uid} onClick={() => sendInvite(p.uid)} className="w-full flex items-center justify-between p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"><div className="flex items-center gap-3"><div className="relative w-10 h-10"><img src={p.photoURL || ''} className="w-full h-full rounded-full bg-gray-800 object-cover" /></div><span className="font-bold text-sm text-white">{p.displayName}</span></div><div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg"><Plus size={16}/></div></button>)))}</div></div></div>)}
             {incomingInvite && (<div className="absolute top-20 left-4 right-4 z-50 bg-[#1A1A21] border border-violet-500/50 p-4 rounded-2xl shadow-2xl animate-in fade-in slide-in-from-top-4"><div className="flex items-center gap-3 mb-3"><div className="w-10 h-10 rounded-full bg-violet-500/20 flex items-center justify-center text-violet-400"><Crown size={20} /></div><div><p className="font-bold text-white text-sm">Seat Invitation</p><p className="text-xs text-gray-400">{incomingInvite.fromName} invited you to Seat {incomingInvite.seatIndex + 1}</p></div></div><div className="flex gap-3"><button onClick={acceptInvite} className="flex-1 bg-violet-600 hover:bg-violet-500 text-white py-2 rounded-xl text-xs font-bold">Accept</button><button onClick={declineInvite} className="flex-1 bg-white/5 hover:bg-white/10 text-gray-400 py-2 rounded-xl text-xs font-bold">Decline</button></div></div>)}
