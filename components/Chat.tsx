@@ -80,14 +80,26 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom, isAuthReady
 
   // Helper to Send Push Notification
   const sendPushNotification = async (recipientId: string, title: string, body: string, icon: string) => {
+      // Don't send notification to self (in case of testing)
+      if (recipientId === currentUser.uid) return;
+
       try {
-          await fetch('/api/send-notification', {
+          console.log("Attempting to send notification to:", recipientId);
+          const res = await fetch('/api/send-notification', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ recipientId, title, body, icon })
           });
+          
+          if (!res.ok) {
+              const errData = await res.json();
+              console.error("Notification API Error:", errData);
+          } else {
+              const data = await res.json();
+              console.log("Notification API Success:", data);
+          }
       } catch (e) {
-          console.error("Failed to send notification", e);
+          console.error("Failed to call notification API (Are you on localhost without proxy?)", e);
       }
   };
 

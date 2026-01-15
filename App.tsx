@@ -8,6 +8,7 @@ import { Auth } from './components/Auth';
 import { VoiceRooms } from './components/VoiceRooms';
 import { ActiveRoom } from './components/Room';
 import { Profile } from './components/Profile';
+import { CallListeners } from './components/CallListeners';
 import { Navigation } from './components/Navigation';
 import { Chat } from './components/Chat';
 import { ViewState, UserProfile, ChatMetadata, Room } from './types';
@@ -140,20 +141,28 @@ const App: React.FC = () => {
                 const permission = await Notification.requestPermission();
                 
                 if (permission === 'granted') {
+                    console.log("Notification permission granted.");
                     // 2. Get Token with VAPID Key
-                    const token = await getToken(msg, { 
-                        vapidKey: 'BFQgJUfYvYFqDYtcgp-QMUBHn2wC6CoqlIomLyPEEnffLhtivpp7yaJV9fgop7nzVQwzvV_Udq35Ex3wveSW4-Q' 
-                    });
+                    try {
+                        const token = await getToken(msg, { 
+                            vapidKey: 'BFQgJUfYvYFqDYtcgp-QMUBHn2wC6CoqlIomLyPEEnffLhtivpp7yaJV9fgop7nzVQwzvV_Udq35Ex3wveSW4-Q' 
+                        });
 
-                    if (token) {
-                        // 3. Save Token to Firestore for targeted notifications
-                        const userRef = doc(db, 'users', user.uid);
-                        await updateDoc(userRef, { fcmToken: token }).catch(() => {});
+                        if (token) {
+                            console.log("FCM Token generated successfully.");
+                            // 3. Save Token to Firestore for targeted notifications
+                            const userRef = doc(db, 'users', user.uid);
+                            await updateDoc(userRef, { fcmToken: token }).catch(err => console.error("Error saving token:", err));
+                        } else {
+                            console.warn("No registration token available. Request permission to generate one.");
+                        }
+                    } catch (tokenErr) {
+                        console.error("Error retrieving FCM token:", tokenErr);
                     }
 
                     // 4. Handle Foreground Messages (App Open)
                     onMessage(msg, (payload) => {
-                        console.log('Message received. ', payload);
+                        console.log('Message received in foreground: ', payload);
                         // Play sound
                         audioRef.current?.play().catch(() => {});
                         // Show visual toast/notification inside app
@@ -165,6 +174,8 @@ const App: React.FC = () => {
                             new Notification(title, { body, icon: '/icon.png' });
                         }
                     });
+                } else {
+                    console.log("Notification permission denied.");
                 }
             }
         } catch (error) {
@@ -209,7 +220,6 @@ const App: React.FC = () => {
   // 2. Real-time User Profile Listener
   useEffect(() => {
     // CRITICAL FIX: Only attempt to listen to Firestore if Auth SDK is ready and user exists.
-    // This prevents "Missing or insufficient permissions" caused by using cached user before SDK init.
     if (!user?.uid || !isAuthReady) return;
 
     const userDocRef = doc(db, 'users', user.uid);
@@ -308,19 +318,16 @@ const App: React.FC = () => {
          
          // Trigger System Notification (Local Simulation for Chat)
          if (Notification.permission === "granted") {
-            // Check visibility state: if hidden, definitely show notification
-            // if visible, only show if not in chats view (already handled by if condition above)
             if (document.visibilityState === 'hidden') {
                 new Notification("Heartly Voice", {
                     body: "You have a new private message!",
                     icon: "/icon.png",
-                    tag: "chat-msg" // prevents stacking too many
+                    tag: "chat-msg" 
                 });
             }
          }
       }
     }, (error) => {
-        // Silently handle permission errors for unread counts
         if (error.code !== 'permission-denied') {
             console.error("Unread count error", error);
         }
@@ -472,6 +479,8 @@ const App: React.FC = () => {
     switch (currentView) {
       case 'rooms':
         return <VoiceRooms currentUser={userProfile} onJoinRoom={handleJoinRoom} isAuthReady={isAuthReady} />;
+      case 'listeners':
+        return <CallListeners currentUser={userProfile} onJoinRoom={handleJoinRoom} isAuthReady={isAuthReady} />;
       case 'chats':
         return <Chat currentUser={userProfile} onJoinRoom={handleJoinRoom} isAuthReady={isAuthReady} />;
       case 'me':

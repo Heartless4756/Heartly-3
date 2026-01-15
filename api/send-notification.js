@@ -1,15 +1,27 @@
 import admin from 'firebase-admin';
 
+// Helper to safely format private key
+const getPrivateKey = () => {
+  const key = process.env.FIREBASE_PRIVATE_KEY;
+  if (!key) return undefined;
+  // Handle both escaped newlines (from .env) and real newlines
+  return key.replace(/\\n/g, '\n');
+};
+
 // Initialize Firebase Admin (Backend SDK)
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      // Fix newline characters in private key when reading from env vars
-      privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    }),
-  });
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: getPrivateKey(),
+      }),
+    });
+    console.log("Firebase Admin Initialized Successfully");
+  } catch (error) {
+    console.error("Firebase Admin Init Error:", error);
+  }
 }
 
 export default async function handler(req, res) {
@@ -30,6 +42,7 @@ export default async function handler(req, res) {
     const userDoc = await db.collection('users').doc(recipientId).get();
 
     if (!userDoc.exists) {
+        console.warn(`User ${recipientId} not found`);
         return res.status(404).json({ error: 'User not found' });
     }
 
@@ -37,7 +50,8 @@ export default async function handler(req, res) {
     const fcmToken = userData.fcmToken;
 
     if (!fcmToken) {
-        return res.status(200).json({ message: 'User has no FCM token' });
+        console.warn(`User ${recipientId} has no FCM token`);
+        return res.status(200).json({ message: 'User has no FCM token, notification skipped' });
     }
 
     // Construct Message
@@ -61,10 +75,11 @@ export default async function handler(req, res) {
 
     // Send via FCM
     const response = await admin.messaging().send(message);
+    console.log("Notification sent successfully:", response);
     res.status(200).json({ success: true, messageId: response });
 
   } catch (error) {
-    console.error('Error sending notification:', error);
-    res.status(500).json({ error: error.message });
+    console.error('Error sending notification API:', error);
+    res.status(500).json({ error: error.message, stack: error.stack });
   }
 }
