@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { auth, db, messaging } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -11,7 +10,6 @@ import { ActiveRoom } from './components/Room';
 import { Profile } from './components/Profile';
 import { Navigation } from './components/Navigation';
 import { Chat } from './components/Chat';
-import { CallListeners } from './components/CallListeners';
 import { ViewState, UserProfile, ChatMetadata, Room } from './types';
 import { X, Disc3, Mic, Bell } from 'lucide-react';
 
@@ -474,8 +472,6 @@ const App: React.FC = () => {
     switch (currentView) {
       case 'rooms':
         return <VoiceRooms currentUser={userProfile} onJoinRoom={handleJoinRoom} isAuthReady={isAuthReady} />;
-      case 'listeners':
-        return <CallListeners currentUser={userProfile} onJoinRoom={handleJoinRoom} isAuthReady={isAuthReady} />;
       case 'chats':
         return <Chat currentUser={userProfile} onJoinRoom={handleJoinRoom} isAuthReady={isAuthReady} />;
       case 'me':
@@ -507,7 +503,6 @@ const App: React.FC = () => {
                     onLeave={handleLeaveRoom}
                     isMinimized={isRoomMinimized}
                     onMinimize={() => setIsRoomMinimized(!isRoomMinimized)}
-                    isAuthReady={isAuthReady}
                   />
               ) : (
                   <div className="flex items-center justify-center h-full">

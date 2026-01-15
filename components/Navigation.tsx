@@ -1,7 +1,6 @@
-
 import React from 'react';
 import { ViewState } from '../types';
-import { Mic, MessageSquare, User, Headphones } from 'lucide-react';
+import { Mic, MessageSquare, User } from 'lucide-react';
 
 interface NavigationProps {
   currentView: ViewState;
@@ -21,13 +20,6 @@ export const Navigation: React.FC<NavigationProps> = ({ currentView, setView, un
           label="Voice Rooms"
         />
 
-        <NavButton 
-          isActive={currentView === 'listeners'} 
-          onClick={() => setView('listeners')}
-          icon={<Headphones size={20} />}
-          label="Listeners"
-        />
-        
         <NavButton 
           isActive={currentView === 'chats'} 
           onClick={() => setView('chats')}
