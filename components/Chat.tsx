@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { 
@@ -78,6 +77,19 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom, isAuthReady
 
   // Derived State
   const isBlocked = activeChatUser ? currentUser.blockedUsers?.includes(activeChatUser.uid) : false;
+
+  // Helper to Send Push Notification
+  const sendPushNotification = async (recipientId: string, title: string, body: string, icon: string) => {
+      try {
+          await fetch('/api/send-notification', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ recipientId, title, body, icon })
+          });
+      } catch (e) {
+          console.error("Failed to send notification", e);
+      }
+  };
 
   // Load existing chats
   useEffect(() => {
@@ -304,6 +316,15 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom, isAuthReady
             updatedAt: Date.now(),
             [`unreadCounts.${activeChatUser.uid}`]: increment(1)
           });
+
+          // TRIGGER NOTIFICATION
+          sendPushNotification(
+              activeChatUser.uid, 
+              currentUser.displayName || 'User', 
+              'Sent a photo 📷', 
+              currentUser.photoURL || ''
+          );
+
       } catch(e) {
           console.error("Image upload failed", e);
           alert("Failed to send image.");
@@ -337,14 +358,7 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom, isAuthReady
       if (!activeChatId) return;
       setShowChatMenu(false);
       try {
-          // Using dot notation to delete map field is tricky in firestore without replacing map
-          // Easier to set it to null or empty string
-          // Or use FieldValue.delete() on the nested field
-          // NOTE: Firestore update nested field delete needs dot notation
           const chatRef = doc(db, 'chats', activeChatId);
-          // We can just set it to null or use 'delete' logic if we imported FieldValue
-          // For simplicity here, setting to null works if our check allows it, or just empty string.
-          // Let's rely on overwriting for now or use a "null" string
           await updateDoc(chatRef, {
               [`wallpapers.${currentUser.uid}`]: null
           });
@@ -355,14 +369,15 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom, isAuthReady
 
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !activeChatId || !activeChatUser) return;
+    const plainText = newMessage.trim(); // Capture before clearing state
+    if (!plainText || !activeChatId || !activeChatUser) return;
 
     if (isBlocked) {
         alert("You have blocked this user. Unblock to send messages.");
         return;
     }
 
-    const encryptedText = simpleEncrypt(newMessage.trim(), ENCRYPTION_KEY);
+    const encryptedText = simpleEncrypt(plainText, ENCRYPTION_KEY);
     const recipientId = activeChatUser.uid;
 
     try {
@@ -389,6 +404,15 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom, isAuthReady
         updatedAt: Date.now(),
         [`unreadCounts.${recipientId}`]: increment(1)
       });
+
+      // TRIGGER NOTIFICATION
+      // Send Plain Text so it is readable in the notification
+      sendPushNotification(
+          recipientId, 
+          currentUser.displayName || 'User', 
+          plainText, 
+          currentUser.photoURL || ''
+      );
 
       setNewMessage('');
     } catch (err) {
