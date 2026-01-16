@@ -78,27 +78,32 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom, isAuthReady
   // Derived State
   const isBlocked = activeChatUser ? currentUser.blockedUsers?.includes(activeChatUser.uid) : false;
 
-  // Helper to Send Push Notification
+  // Helper to Send Push Notification with Fail-safe
   const sendPushNotification = async (recipientId: string, title: string, body: string, icon: string) => {
-      // Don't send notification to self (in case of testing)
+      // Don't send notification to self
       if (recipientId === currentUser.uid) return;
 
       try {
-          console.log("Attempting to send notification to:", recipientId);
           const res = await fetch('/api/send-notification', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ recipientId, title, body, icon })
           });
           
-          const data = await res.json();
-          if (!res.ok) {
-              console.error("Notification API Error:", data);
+          // Handle non-JSON responses (like 404 from Vite dev server or 500 HTML error pages)
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.indexOf("application/json") !== -1) {
+              const data = await res.json();
+              if (!res.ok) {
+                  console.warn("Notification API Warning:", data.error || "Unknown error");
+              }
           } else {
-              console.log("Notification API Success:", data);
+             // If we get here, it's likely a 404 on localhost or Vercel config issue
+             if (!res.ok) console.log("Notification API unavailable (Are you on localhost?)");
           }
       } catch (e) {
-          console.error("Failed to call notification API (Network Error):", e);
+          // Network errors, etc.
+          console.warn("Failed to send push notification (Network/Server Error). This is expected on localhost without 'vercel dev'.");
       }
   };
 

@@ -5,16 +5,15 @@ const getPrivateKey = () => {
   const key = process.env.FIREBASE_PRIVATE_KEY;
   if (!key) return undefined;
   
-  let formattedKey = key;
+  // Handle Vercel's environment variable formatting issues
+  // 1. Remove wrapping quotes if they exist
+  let formattedKey = key.replace(/^"|"$/g, '');
   
-  // 1. Remove surrounding quotes if present (Common Vercel env var issue)
-  if (formattedKey.startsWith('"') && formattedKey.endsWith('"')) {
-    formattedKey = formattedKey.slice(1, -1);
+  // 2. Re-introduce proper newlines if they are escaped as literal \n
+  if (formattedKey.includes('\\n')) {
+      formattedKey = formattedKey.replace(/\\n/g, '\n');
   }
-
-  // 2. Replace escaped newlines with actual newlines
-  formattedKey = formattedKey.replace(/\\n/g, '\n');
-
+  
   return formattedKey;
 };
 
@@ -22,15 +21,18 @@ const getPrivateKey = () => {
 if (!admin.apps.length) {
   try {
     const privateKey = getPrivateKey();
-    if (!privateKey) {
-        throw new Error("FIREBASE_PRIVATE_KEY is missing");
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+
+    if (!privateKey || !projectId || !clientEmail) {
+        throw new Error("Missing Firebase Configuration in Environment Variables");
     }
 
     admin.initializeApp({
       credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: privateKey,
+        projectId,
+        clientEmail,
+        privateKey,
       }),
     });
     console.log("Firebase Admin Initialized Successfully");
@@ -40,6 +42,20 @@ if (!admin.apps.length) {
 }
 
 export default async function handler(req, res) {
+  // CORS Headers for API accessibility
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+  );
+
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -51,6 +67,10 @@ export default async function handler(req, res) {
   }
 
   try {
+    if (!admin.apps.length) {
+        return res.status(500).json({ error: 'Firebase Admin not initialized. Check server logs.' });
+    }
+
     const db = admin.firestore();
     
     // Get Recipient's FCM Token
@@ -69,8 +89,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ message: 'User has no FCM token, notification skipped' });
     }
 
-    // Hybrid Message: Includes both 'notification' (for system tray) and 'data' (for logic)
-    // This ensures delivery even if the Service Worker handling is quirky on some devices.
+    // Standard FCM Message Payload for Web Push
     const message = {
       notification: {
           title: title,
@@ -80,8 +99,8 @@ export default async function handler(req, res) {
         title: title,
         body: body,
         icon: icon || '/icon.png',
-        url: '/',
-        click_action: '/', // Legacy support
+        url: '/', 
+        click_action: '/',
         type: 'chat_msg'
       },
       token: fcmToken,
@@ -94,7 +113,8 @@ export default async function handler(req, res) {
         },
         notification: {
             icon: icon || '/icon.png',
-            badge: '/icon.png'
+            badge: '/icon.png',
+            requireInteraction: true
         }
       }
     };
@@ -106,9 +126,8 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('Error sending notification API:', error);
-    // Provide explicit error to client for debugging
     res.status(500).json({ 
-        error: error.message, 
+        error: error.message || 'Internal Server Error', 
         code: error.code || 'unknown'
     });
   }
