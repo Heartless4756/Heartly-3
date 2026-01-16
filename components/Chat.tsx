@@ -91,15 +91,14 @@ export const Chat: React.FC<ChatProps> = ({ currentUser, onJoinRoom, isAuthReady
               body: JSON.stringify({ recipientId, title, body, icon })
           });
           
+          const data = await res.json();
           if (!res.ok) {
-              const errData = await res.json();
-              console.error("Notification API Error:", errData);
+              console.error("Notification API Error:", data);
           } else {
-              const data = await res.json();
               console.log("Notification API Success:", data);
           }
       } catch (e) {
-          console.error("Failed to call notification API (Are you on localhost without proxy?)", e);
+          console.error("Failed to call notification API (Network Error):", e);
       }
   };
 

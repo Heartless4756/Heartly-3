@@ -16,11 +16,18 @@ firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
 // Background Message Handler
+// Note: If payload contains 'notification' key, browser might handle it automatically.
+// We add this to handle 'data' only messages or enhance notification if possible.
 messaging.onBackgroundMessage(function(payload) {
   console.log('[firebase-messaging-sw.js] Received background message ', payload);
   
-  // Handle 'data' payload structure
-  if (payload.data) {
+  // If the browser hasn't already shown a notification (because of the 'notification' key),
+  // or if we want to show a custom one based on 'data'.
+  
+  // Typically, if 'notification' key exists in payload, this callback runs but
+  // the system *also* shows a notification. To prevent duplicates, check payload structure.
+  
+  if (payload.data && !payload.notification) {
     const notificationTitle = payload.data.title || 'Heartly Voice';
     const notificationOptions = {
       body: payload.data.body,
@@ -30,21 +37,10 @@ messaging.onBackgroundMessage(function(payload) {
           url: payload.data.url || '/'
       },
       requireInteraction: true,
-      vibrate: [200, 100, 200] // Vibration pattern for mobile
+      vibrate: [200, 100, 200]
     };
 
     return self.registration.showNotification(notificationTitle, notificationOptions);
-  }
-  
-  // Fallback for 'notification' payload structure
-  if (payload.notification) {
-      const notificationTitle = payload.notification.title || 'Heartly Voice';
-      const notificationOptions = {
-        body: payload.notification.body,
-        icon: '/icon.png',
-        badge: '/icon.png'
-      };
-      return self.registration.showNotification(notificationTitle, notificationOptions);
   }
 });
 
@@ -53,15 +49,21 @@ self.addEventListener('notificationclick', function(event) {
   console.log('Notification clicked', event);
   event.notification.close();
 
-  const targetUrl = event.notification.data?.url || '/';
+  // Try to find the URL from data, fallback to root
+  const targetUrl = (event.notification.data && event.notification.data.url) ? event.notification.data.url : '/';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
       // Focus existing window if available
       for (let i = 0; i < clientList.length; i++) {
         const client = clientList[i];
-        if (client.url.includes(targetUrl) && 'focus' in client) {
-          return client.focus();
+        const clientUrl = new URL(client.url, self.location.origin).pathname;
+        
+        // Simple match or root match
+        if (clientUrl === '/' || client.url.includes(targetUrl)) {
+            if ('focus' in client) {
+                return client.focus();
+            }
         }
       }
       // Otherwise open new window

@@ -4,23 +4,38 @@ import admin from 'firebase-admin';
 const getPrivateKey = () => {
   const key = process.env.FIREBASE_PRIVATE_KEY;
   if (!key) return undefined;
-  // Handle both escaped newlines (from .env) and real newlines
-  return key.replace(/\\n/g, '\n');
+  
+  let formattedKey = key;
+  
+  // 1. Remove surrounding quotes if present (Common Vercel env var issue)
+  if (formattedKey.startsWith('"') && formattedKey.endsWith('"')) {
+    formattedKey = formattedKey.slice(1, -1);
+  }
+
+  // 2. Replace escaped newlines with actual newlines
+  formattedKey = formattedKey.replace(/\\n/g, '\n');
+
+  return formattedKey;
 };
 
 // Initialize Firebase Admin (Backend SDK)
 if (!admin.apps.length) {
   try {
+    const privateKey = getPrivateKey();
+    if (!privateKey) {
+        throw new Error("FIREBASE_PRIVATE_KEY is missing");
+    }
+
     admin.initializeApp({
       credential: admin.credential.cert({
         projectId: process.env.FIREBASE_PROJECT_ID,
         clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: getPrivateKey(),
+        privateKey: privateKey,
       }),
     });
     console.log("Firebase Admin Initialized Successfully");
   } catch (error) {
-    console.error("Firebase Admin Init Error:", error);
+    console.error("Firebase Admin Init Error:", error.message);
   }
 }
 
@@ -54,13 +69,19 @@ export default async function handler(req, res) {
         return res.status(200).json({ message: 'User has no FCM token, notification skipped' });
     }
 
-    // Construct Message using Data payload for SW handling
+    // Hybrid Message: Includes both 'notification' (for system tray) and 'data' (for logic)
+    // This ensures delivery even if the Service Worker handling is quirky on some devices.
     const message = {
+      notification: {
+          title: title,
+          body: body,
+      },
       data: {
         title: title,
         body: body,
         icon: icon || '/icon.png',
         url: '/',
+        click_action: '/', // Legacy support
         type: 'chat_msg'
       },
       token: fcmToken,
@@ -70,6 +91,10 @@ export default async function handler(req, res) {
         },
         fcm_options: {
            link: '/'
+        },
+        notification: {
+            icon: icon || '/icon.png',
+            badge: '/icon.png'
         }
       }
     };
@@ -81,6 +106,10 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('Error sending notification API:', error);
-    res.status(500).json({ error: error.message, stack: error.stack });
+    // Provide explicit error to client for debugging
+    res.status(500).json({ 
+        error: error.message, 
+        code: error.code || 'unknown'
+    });
   }
 }
