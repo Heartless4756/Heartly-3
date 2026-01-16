@@ -166,8 +166,9 @@ const App: React.FC = () => {
                         // Play sound
                         audioRef.current?.play().catch(() => {});
                         // Show visual toast/notification inside app
-                        const title = payload.notification?.title || 'New Message';
-                        const body = payload.notification?.body || '';
+                        // Handle both data and notification payloads
+                        const title = payload.data?.title || payload.notification?.title || 'New Message';
+                        const body = payload.data?.body || payload.notification?.body || '';
                         
                         // Fallback browser notification if tab is focused but user might be looking away
                         if (Notification.permission === 'granted') {

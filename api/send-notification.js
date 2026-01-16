@@ -54,21 +54,22 @@ export default async function handler(req, res) {
         return res.status(200).json({ message: 'User has no FCM token, notification skipped' });
     }
 
-    // Construct Message
+    // Construct Message using Data payload for SW handling
     const message = {
-      notification: {
+      data: {
         title: title,
         body: body,
+        icon: icon || '/icon.png',
+        url: '/',
+        type: 'chat_msg'
       },
       token: fcmToken,
       webpush: {
         headers: {
           Urgency: "high"
         },
-        notification: {
-            icon: icon || '/icon.png',
-            badge: '/icon.png',
-            requireInteraction: true
+        fcm_options: {
+           link: '/'
         }
       }
     };
